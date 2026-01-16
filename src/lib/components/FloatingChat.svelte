@@ -1,26 +1,66 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import type { Topic } from '$lib/data/topics';
+	import type { TopicProgress } from '$lib/server/storage';
 
-	let { topic }: { topic: Topic } = $props();
+	interface Props {
+		topic: Topic;
+		progress?: TopicProgress;
+		notes?: string;
+	}
 
+	let { topic, progress, notes = '' }: Props = $props();
+
+	// Message types for the enhanced chat
 	interface ChatMessage {
 		role: 'user' | 'assistant';
 		content: string;
 		timestamp: string;
 	}
 
+	interface ActivityMessage {
+		type: 'activity';
+		action: 'search' | 'add_resource' | 'add_code_example' | 'add_lesson' | 'thinking';
+		details: string;
+		timestamp: string;
+	}
+
+	interface ThinkingMessage {
+		type: 'thinking';
+		content: string;
+		timestamp: string;
+	}
+
+	type Message = ChatMessage | ActivityMessage | ThinkingMessage;
+
+	// State
 	let expanded = $state(false);
-	let messages = $state<ChatMessage[]>([]);
+	let messages = $state<Message[]>([]);
 	let input = $state('');
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let lettaAvailable = $state(true); // Assume available, show error if not
+	let lettaAvailable = $state(true);
 	let messagesContainer: HTMLElement | null = $state(null);
 	let abortController: AbortController | null = $state(null);
 
+	// Enhanced state
+	let showThinking = $state(true);
+	let currentThinking = $state<string | null>(null);
+	let activeTab = $state<'chat' | 'notes' | 'memory'>('chat');
+	let newContentCount = $state(0);
+	let showMemoryPanel = $state(false);
+	let memoryBlocks = $state<Array<{ label: string; value: string; isShared: boolean }>>([]);
+
+	// Derived values
+	const exercisesCompleted = $derived(
+		progress?.exercisesCompleted?.filter(Boolean).length ?? 0
+	);
+	const totalExercises = $derived(topic.exercises.length);
+	const lastVisited = $derived(progress?.lastVisited);
+
 	onMount(async () => {
 		await loadNotebook();
+		await checkNewContent();
 	});
 
 	// Reload notebook when topic changes
@@ -45,11 +85,30 @@
 		}
 	}
 
+	async function checkNewContent() {
+		try {
+			const response = await fetch(`/api/letta/activity?topicId=${topic.id}&limit=10`);
+			if (response.ok) {
+				const data = await response.json();
+				// Count activities since last visit
+				if (lastVisited && data.activities) {
+					const lastVisitTime = new Date(lastVisited).getTime();
+					newContentCount = data.activities.filter(
+						(a: { timestamp: string }) => new Date(a.timestamp).getTime() > lastVisitTime
+					).length;
+				}
+			}
+		} catch (e) {
+			console.error('Failed to check new content:', e);
+		}
+	}
+
 	function stopGeneration() {
 		if (abortController) {
 			abortController.abort();
 			abortController = null;
 			loading = false;
+			currentThinking = null;
 		}
 	}
 
@@ -60,11 +119,11 @@
 		input = '';
 		loading = true;
 		error = null;
+		currentThinking = null;
 
-		// Create abort controller for this request
 		abortController = new AbortController();
 
-		// Optimistically add user message
+		// Add user message
 		messages = [...messages, {
 			role: 'user',
 			content: userMessage,
@@ -80,7 +139,6 @@
 		}];
 
 		try {
-			// Use Letta agent for chat (has persistent memory + knowledge base)
 			const response = await fetch('/api/chat-letta', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -91,7 +149,12 @@
 					stream: true,
 					topicContext: {
 						title: topic.title,
-						category: topic.category
+						category: topic.category,
+						description: topic.description,
+						keyPoints: topic.keyPoints,
+						godotConnection: topic.godotConnection,
+						exercises: topic.exercises,
+						notes: notes || ''
 					}
 				})
 			});
@@ -101,7 +164,6 @@
 				throw new Error(data.error || 'Failed to get response');
 			}
 
-			// Handle SSE streaming
 			const reader = response.body?.getReader();
 			if (!reader) throw new Error('No response body');
 
@@ -125,23 +187,43 @@
 
 						switch (eventType) {
 							case 'text':
-								// Update the last message (assistant) with new text
 								messages = messages.map((m, i) =>
-									i === messages.length - 1
+									i === messages.length - 1 && 'content' in m
 										? { ...m, content: m.content + data.text }
 										: m
 								);
 								await scrollToBottom();
 								break;
 
+							case 'thinking':
+								// Show thinking in the UI
+								if (showThinking && data.reasoning) {
+									currentThinking = data.reasoning;
+								}
+								break;
+
 							case 'tool':
-								// Tool was used - could show notification
-								console.log('Tool used:', data.name, data.title);
+								// Add activity message
+								if (data.name && data.name !== 'send_message') {
+									const activityMsg: ActivityMessage = {
+										type: 'activity',
+										action: mapToolToAction(data.name),
+										details: formatToolDetails(data.name, data.title || data.result),
+										timestamp: new Date().toISOString()
+									};
+									// Insert before the assistant response
+									const lastIdx = messages.length - 1;
+									messages = [
+										...messages.slice(0, lastIdx),
+										activityMsg,
+										messages[lastIdx]
+									];
+								}
 								break;
 
 							case 'done':
-								// Final update with complete notebook
 								messages = data.notebook.messages;
+								currentThinking = null;
 								break;
 
 							case 'error':
@@ -152,19 +234,15 @@
 			}
 		} catch (e) {
 			if (e instanceof Error && e.name === 'AbortError') {
-				// User stopped generation - keep partial response if any
 				const lastMessage = messages[messages.length - 1];
-				if (lastMessage.role === 'assistant' && !lastMessage.content) {
-					// Remove empty placeholder
+				if ('content' in lastMessage && lastMessage.role === 'assistant' && !lastMessage.content) {
 					messages = messages.slice(0, -1);
 				}
 			} else {
 				const errorMessage = e instanceof Error ? e.message : 'Something went wrong';
 				error = errorMessage;
-				// Remove the placeholder messages on error
 				messages = messages.slice(0, -2);
 
-				// Check if Letta server is unavailable
 				if (errorMessage.includes('Letta') || errorMessage.includes('fetch')) {
 					lettaAvailable = false;
 				}
@@ -172,7 +250,41 @@
 		} finally {
 			loading = false;
 			abortController = null;
+			currentThinking = null;
 			await scrollToBottom();
+		}
+	}
+
+	function mapToolToAction(toolName: string): ActivityMessage['action'] {
+		if (toolName.includes('search') || toolName === 'web_search') return 'search';
+		if (toolName === 'add_resource') return 'add_resource';
+		if (toolName === 'add_code_example') return 'add_code_example';
+		if (toolName === 'add_lesson') return 'add_lesson';
+		return 'thinking';
+	}
+
+	function formatToolDetails(toolName: string, result?: string): string {
+		switch (toolName) {
+			case 'web_search':
+				return 'Searching for resources...';
+			case 'add_resource':
+				return result ? `Added resource: ${result}` : 'Adding resource...';
+			case 'add_code_example':
+				return result ? `Added code example: ${result}` : 'Adding code example...';
+			case 'add_lesson':
+				return result ? `Generated lesson: ${result}` : 'Generating lesson...';
+			case 'get_topics':
+				return 'Checking curriculum...';
+			case 'get_conversation_details':
+				return 'Reviewing conversation history...';
+			case 'get_current_extensions':
+				return 'Checking existing content...';
+			case 'get_student_progress':
+				return 'Checking your progress...';
+			case 'get_student_notes':
+				return 'Reading your notes...';
+			default:
+				return result || `Using ${toolName}...`;
 		}
 	}
 
@@ -191,6 +303,34 @@
 		}
 	}
 
+	async function triggerCuration() {
+		try {
+			const response = await fetch('/api/letta/curate', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mode: 'topic', topicId: topic.id })
+			});
+			if (response.ok) {
+				// Show a notification or update UI
+				await checkNewContent();
+			}
+		} catch (e) {
+			console.error('Failed to trigger curation:', e);
+		}
+	}
+
+	async function loadMemory() {
+		try {
+			const response = await fetch('/api/letta/memory?agent=gideon');
+			if (response.ok) {
+				const data = await response.json();
+				memoryBlocks = data.memoryBlocks || [];
+			}
+		} catch (e) {
+			console.error('Failed to load memory:', e);
+		}
+	}
+
 	async function scrollToBottom() {
 		await tick();
 		if (messagesContainer) {
@@ -205,9 +345,6 @@
 		}
 	}
 
-	/**
-	 * Escape HTML to prevent XSS attacks.
-	 */
 	function escapeHtml(text: string): string {
 		return text
 			.replace(/&/g, '&amp;')
@@ -217,23 +354,29 @@
 			.replace(/'/g, '&#039;');
 	}
 
-	/**
-	 * Format message content with basic markdown support.
-	 * Escapes HTML first to prevent XSS, then applies formatting.
-	 */
 	function formatMessage(content: string): string {
-		// First escape HTML to prevent XSS
 		const escaped = escapeHtml(content);
-
 		return escaped
-			// Code blocks: ```lang\ncode``` -> <pre><code>code</code></pre>
 			.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-			// Inline code: `code` -> <code>code</code>
 			.replace(/`([^`]+)`/g, '<code>$1</code>')
-			// Bold: **text** -> <strong>text</strong>
 			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-			// Line breaks
 			.replace(/\n/g, '<br>');
+	}
+
+	function formatTimeAgo(timestamp: string | null): string {
+		if (!timestamp) return 'Never';
+		const now = new Date().getTime();
+		const then = new Date(timestamp).getTime();
+		const diff = now - then;
+
+		const minutes = Math.floor(diff / 60000);
+		if (minutes < 60) return `${minutes}m ago`;
+
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours}h ago`;
+
+		const days = Math.floor(hours / 24);
+		return `${days}d ago`;
 	}
 
 	function handleClickOutside(e: MouseEvent) {
@@ -242,24 +385,35 @@
 			expanded = false;
 		}
 	}
+
+	const activityIcons: Record<string, string> = {
+		search: 'S',
+		add_resource: 'R',
+		add_code_example: 'C',
+		add_lesson: 'L',
+		thinking: 'T'
+	};
 </script>
 
 <svelte:window onclick={handleClickOutside} />
 
-<!-- Collapsed: Minimal bubble -->
+<!-- Collapsed: Minimal bubble with notification badge -->
 {#if !expanded}
 	<button
 		class="chat-bubble"
-		onclick={(e) => { e.stopPropagation(); expanded = true; }}
+		onclick={(e) => { e.stopPropagation(); expanded = true; newContentCount = 0; }}
 		aria-label="Open AI tutor"
 	>
 		<span class="bubble-icon">
 			{#if messages.length > 0}
 				<span class="message-count">{messages.length}</span>
 			{:else}
-				<span class="chat-emoji">?</span>
+				<span class="chat-emoji">G</span>
 			{/if}
 		</span>
+		{#if newContentCount > 0}
+			<span class="notification-badge">{newContentCount}</span>
+		{/if}
 	</button>
 {:else}
 	<!-- Expanded: Full chat panel -->
@@ -267,22 +421,70 @@
 	<div class="chat-panel" onclick={(e) => e.stopPropagation()}>
 		<header class="panel-header">
 			<div class="header-left">
-				<span class="header-icon">?</span>
+				<span class="agent-name">Gideon</span>
 				<span class="topic-context">{topic.title}</span>
 			</div>
 			<div class="header-actions">
+				<button
+					class="icon-btn"
+					onclick={() => { showMemoryPanel = !showMemoryPanel; if (showMemoryPanel) loadMemory(); }}
+					title="Agent memory"
+				>
+					M
+				</button>
 				<button class="icon-btn" onclick={clearChat} title="Clear chat">
-					<span>Clear</span>
+					X
 				</button>
 				<button
 					class="close-btn"
 					onclick={() => expanded = false}
 					aria-label="Close chat"
 				>
-					<span>x</span>
+					x
 				</button>
 			</div>
 		</header>
+
+		<!-- Context Bar -->
+		<div class="context-bar">
+			<span class="context-item">
+				<span class="context-label">Progress:</span>
+				<span class="context-value">{exercisesCompleted}/{totalExercises}</span>
+			</span>
+			<span class="context-item">
+				<span class="context-label">Last:</span>
+				<span class="context-value">{formatTimeAgo(lastVisited)}</span>
+			</span>
+			<button class="curate-btn" onclick={triggerCuration} title="Find resources for this topic">
+				Curate
+			</button>
+		</div>
+
+		<!-- Memory Panel (overlay) -->
+		{#if showMemoryPanel}
+			<div class="memory-panel">
+				<div class="memory-header">
+					<span>What Gideon Knows</span>
+					<button onclick={() => showMemoryPanel = false}>x</button>
+				</div>
+				<div class="memory-content">
+					{#each memoryBlocks as block}
+						<div class="memory-block" class:shared={block.isShared}>
+							<div class="memory-label">
+								{block.label}
+								{#if block.isShared}
+									<span class="shared-badge">Shared</span>
+								{/if}
+							</div>
+							<div class="memory-value">{block.value.slice(0, 200)}{block.value.length > 200 ? '...' : ''}</div>
+						</div>
+					{/each}
+					{#if memoryBlocks.length === 0}
+						<p class="no-memory">Unable to load agent memory</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
 
 		{#if !lettaAvailable}
 			<div class="no-api-key">
@@ -290,6 +492,14 @@
 				<p class="hint">Start the Letta server on localhost:8283</p>
 			</div>
 		{:else}
+			<!-- Thinking indicator -->
+			{#if currentThinking && showThinking}
+				<div class="thinking-bubble">
+					<span class="thinking-icon">T</span>
+					<span class="thinking-text">{currentThinking.slice(0, 150)}{currentThinking.length > 150 ? '...' : ''}</span>
+				</div>
+			{/if}
+
 			<div class="messages" bind:this={messagesContainer}>
 				{#if messages.length === 0}
 					<div class="empty-state">
@@ -308,11 +518,20 @@
 					</div>
 				{:else}
 					{#each messages as message}
-						<div class="message" class:user={message.role === 'user'} class:assistant={message.role === 'assistant'}>
-							<div class="message-content">
-								{@html formatMessage(message.content)}
+						{#if 'type' in message && message.type === 'activity'}
+							<!-- Activity message -->
+							<div class="activity-message">
+								<span class="activity-icon">{activityIcons[message.action]}</span>
+								<span class="activity-text">{message.details}</span>
 							</div>
-						</div>
+						{:else if 'role' in message}
+							<!-- Chat message -->
+							<div class="message" class:user={message.role === 'user'} class:assistant={message.role === 'assistant'}>
+								<div class="message-content">
+									{@html formatMessage(message.content)}
+								</div>
+							</div>
+						{/if}
 					{/each}
 				{/if}
 
@@ -347,7 +566,7 @@
 					</button>
 				{:else}
 					<button type="submit" disabled={!input.trim()}>
-						>
+						&gt;
 					</button>
 				{/if}
 			</form>
@@ -386,7 +605,9 @@
 	}
 
 	.chat-emoji {
-		font-size: 24px;
+		font-size: 20px;
+		font-weight: 700;
+		color: white;
 	}
 
 	.message-count {
@@ -402,14 +623,30 @@
 		justify-content: center;
 	}
 
+	.notification-badge {
+		position: absolute;
+		top: -4px;
+		right: -4px;
+		background: var(--error);
+		color: white;
+		font-size: 10px;
+		font-weight: 700;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
 	/* Panel - expanded state */
 	.chat-panel {
 		position: fixed;
 		bottom: var(--space-6);
 		right: var(--space-6);
-		width: 400px;
+		width: 420px;
 		max-width: calc(100vw - var(--space-8));
-		max-height: 500px;
+		max-height: 560px;
 		background: var(--bg-secondary);
 		border: 1px solid var(--border-default);
 		border-radius: 12px;
@@ -432,23 +669,25 @@
 	.header-left {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2);
+		gap: var(--space-3);
 	}
 
-	.header-icon {
-		font-size: var(--text-lg);
+	.agent-name {
+		font-weight: 600;
+		color: var(--accent);
+		font-size: var(--text-sm);
 	}
 
 	.topic-context {
 		font-weight: 500;
-		color: var(--text-primary);
-		font-size: var(--text-sm);
+		color: var(--text-secondary);
+		font-size: var(--text-xs);
 	}
 
 	.header-actions {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2);
+		gap: var(--space-1);
 	}
 
 	.icon-btn {
@@ -457,6 +696,7 @@
 		padding: var(--space-1) var(--space-2);
 		font-size: var(--text-xs);
 		border: none;
+		border-radius: var(--radius-sm);
 	}
 
 	.icon-btn:hover {
@@ -475,6 +715,191 @@
 
 	.close-btn:hover {
 		color: var(--text-primary);
+	}
+
+	/* Context Bar */
+	.context-bar {
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+		padding: var(--space-2) var(--space-4);
+		background: var(--bg-primary);
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: var(--text-xs);
+	}
+
+	.context-item {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+	}
+
+	.context-label {
+		color: var(--text-muted);
+	}
+
+	.context-value {
+		color: var(--text-secondary);
+		font-weight: 500;
+	}
+
+	.curate-btn {
+		margin-left: auto;
+		padding: 2px 8px;
+		background: var(--accent-muted);
+		color: var(--accent);
+		border: none;
+		border-radius: var(--radius-sm);
+		font-size: var(--text-xs);
+		font-weight: 500;
+		cursor: pointer;
+	}
+
+	.curate-btn:hover {
+		background: var(--accent);
+		color: white;
+	}
+
+	/* Memory Panel */
+	.memory-panel {
+		position: absolute;
+		top: 60px;
+		left: var(--space-3);
+		right: var(--space-3);
+		background: var(--bg-elevated);
+		border: 1px solid var(--border-default);
+		border-radius: var(--radius-md);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+		z-index: 10;
+		max-height: 300px;
+		overflow: hidden;
+	}
+
+	.memory-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--space-2) var(--space-3);
+		border-bottom: 1px solid var(--border-subtle);
+		font-weight: 500;
+		font-size: var(--text-sm);
+	}
+
+	.memory-header button {
+		background: transparent;
+		border: none;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+
+	.memory-content {
+		padding: var(--space-2);
+		max-height: 250px;
+		overflow-y: auto;
+	}
+
+	.memory-block {
+		padding: var(--space-2);
+		margin-bottom: var(--space-2);
+		background: var(--bg-secondary);
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border-subtle);
+	}
+
+	.memory-block.shared {
+		border-color: var(--accent-muted);
+	}
+
+	.memory-label {
+		font-size: var(--text-xs);
+		font-weight: 600;
+		color: var(--text-secondary);
+		margin-bottom: var(--space-1);
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.shared-badge {
+		font-size: 9px;
+		padding: 1px 4px;
+		background: var(--accent-muted);
+		color: var(--accent);
+		border-radius: 2px;
+	}
+
+	.memory-value {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		line-height: 1.4;
+	}
+
+	.no-memory {
+		text-align: center;
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		padding: var(--space-4);
+	}
+
+	/* Thinking Bubble */
+	.thinking-bubble {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-2);
+		padding: var(--space-2) var(--space-4);
+		background: rgba(10, 132, 255, 0.1);
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+	}
+
+	.thinking-icon {
+		background: var(--accent-muted);
+		color: var(--accent);
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 10px;
+		font-weight: 600;
+		flex-shrink: 0;
+	}
+
+	.thinking-text {
+		line-height: 1.4;
+		font-style: italic;
+	}
+
+	/* Activity Messages */
+	.activity-message {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		padding: var(--space-1) var(--space-3);
+		background: var(--bg-elevated);
+		border-radius: var(--radius-sm);
+		margin: var(--space-1) 0;
+		font-size: var(--text-xs);
+		color: var(--text-secondary);
+	}
+
+	.activity-icon {
+		background: var(--bg-hover);
+		color: var(--text-muted);
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 10px;
+		font-weight: 600;
+	}
+
+	.activity-text {
+		flex: 1;
 	}
 
 	.no-api-key {
@@ -693,7 +1118,12 @@
 			width: calc(100vw - var(--space-4));
 			right: var(--space-2);
 			bottom: var(--space-2);
-			max-height: 60vh;
+			max-height: 70vh;
+		}
+
+		.context-bar {
+			flex-wrap: wrap;
+			gap: var(--space-2);
 		}
 	}
 </style>

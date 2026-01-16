@@ -6,6 +6,7 @@ const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 const NOTEBOOKS_DIR = join(DATA_DIR, 'notebooks');
 const PROGRESS_FILE = join(DATA_DIR, 'progress.json');
 const EXTENSIONS_DIR = join(DATA_DIR, 'extensions');
+const LESSONS_DIR = join(DATA_DIR, 'lessons');
 
 // Ensure data directories exist
 function ensureDataDirs() {
@@ -17,6 +18,9 @@ function ensureDataDirs() {
 	}
 	if (!existsSync(EXTENSIONS_DIR)) {
 		mkdirSync(EXTENSIONS_DIR, { recursive: true });
+	}
+	if (!existsSync(LESSONS_DIR)) {
+		mkdirSync(LESSONS_DIR, { recursive: true });
 	}
 }
 
@@ -269,4 +273,206 @@ export function getAllTopicExtensions(): Record<string, TopicExtension> {
 		}
 	}
 	return extensions;
+}
+
+// =============================================================================
+// Lessons (AI-generated pedagogical content)
+// =============================================================================
+
+export interface LessonContent {
+	introduction: string;
+	concepts: string[];
+	explanation: string;
+	exercises: string[];
+	connections: string[];
+}
+
+export interface Lesson {
+	id: string;
+	topicId: string;
+	title: string;
+	difficulty: 'beginner' | 'intermediate' | 'advanced';
+	content: LessonContent;
+	generatedAt: string;
+	generatedFor: string;
+	addedBy: 'ai';
+}
+
+function ensureTopicLessonsDir(topicId: string): string {
+	ensureDataDirs();
+	const topicDir = join(LESSONS_DIR, topicId);
+	if (!existsSync(topicDir)) {
+		mkdirSync(topicDir, { recursive: true });
+	}
+	return topicDir;
+}
+
+function generateLessonId(title: string): string {
+	return title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-|-$/g, '')
+		.substring(0, 50);
+}
+
+export function addLesson(
+	topicId: string,
+	lesson: Omit<Lesson, 'id' | 'generatedAt' | 'addedBy'>
+): Lesson {
+	const topicDir = ensureTopicLessonsDir(topicId);
+	const id = generateLessonId(lesson.title);
+	const fullLesson: Lesson = {
+		...lesson,
+		id,
+		topicId,
+		generatedAt: new Date().toISOString(),
+		addedBy: 'ai'
+	};
+
+	const filePath = join(topicDir, `${id}.json`);
+	writeFileSync(filePath, JSON.stringify(fullLesson, null, 2));
+	return fullLesson;
+}
+
+export function getLesson(topicId: string, lessonId: string): Lesson | null {
+	ensureDataDirs();
+	const filePath = join(LESSONS_DIR, topicId, `${lessonId}.json`);
+	if (!existsSync(filePath)) {
+		return null;
+	}
+	try {
+		const data = readFileSync(filePath, 'utf-8');
+		return JSON.parse(data);
+	} catch {
+		return null;
+	}
+}
+
+export function getLessonsForTopic(topicId: string): Lesson[] {
+	ensureDataDirs();
+	const topicDir = join(LESSONS_DIR, topicId);
+	if (!existsSync(topicDir)) {
+		return [];
+	}
+
+	const files = readdirSync(topicDir) as string[];
+	const lessons: Lesson[] = [];
+
+	for (const f of files) {
+		if (f.endsWith('.json')) {
+			try {
+				const data = readFileSync(join(topicDir, f), 'utf-8');
+				lessons.push(JSON.parse(data));
+			} catch {
+				// Skip invalid files
+			}
+		}
+	}
+
+	// Sort by generatedAt (newest first)
+	return lessons.sort((a, b) =>
+		new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
+	);
+}
+
+export function getAllLessons(): Record<string, Lesson[]> {
+	ensureDataDirs();
+	if (!existsSync(LESSONS_DIR)) {
+		return {};
+	}
+
+	const topicDirs = readdirSync(LESSONS_DIR) as string[];
+	const allLessons: Record<string, Lesson[]> = {};
+
+	for (const topicId of topicDirs) {
+		const topicPath = join(LESSONS_DIR, topicId);
+		// Skip files, only process directories
+		try {
+			const stat = require('fs').statSync(topicPath);
+			if (stat.isDirectory()) {
+				const lessons = getLessonsForTopic(topicId);
+				if (lessons.length > 0) {
+					allLessons[topicId] = lessons;
+				}
+			}
+		} catch {
+			// Skip on error
+		}
+	}
+
+	return allLessons;
+}
+
+export function deleteLesson(topicId: string, lessonId: string): boolean {
+	const filePath = join(LESSONS_DIR, topicId, `${lessonId}.json`);
+	if (existsSync(filePath)) {
+		require('fs').unlinkSync(filePath);
+		return true;
+	}
+	return false;
+}
+
+// =============================================================================
+// Agent Activity Log (for UI transparency)
+// =============================================================================
+
+export interface AgentActivity {
+	id: string;
+	type: 'search' | 'add_resource' | 'add_code_example' | 'add_lesson' | 'thinking';
+	details: string;
+	topicId?: string;
+	timestamp: string;
+	agentName: 'gideon' | 'curator';
+}
+
+const ACTIVITY_LOG_FILE = join(DATA_DIR, 'agent_activity.json');
+const MAX_ACTIVITY_ENTRIES = 100;
+
+export function logAgentActivity(activity: Omit<AgentActivity, 'id' | 'timestamp'>): AgentActivity {
+	ensureDataDirs();
+
+	const fullActivity: AgentActivity = {
+		...activity,
+		id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+		timestamp: new Date().toISOString()
+	};
+
+	let activities: AgentActivity[] = [];
+	if (existsSync(ACTIVITY_LOG_FILE)) {
+		try {
+			const data = readFileSync(ACTIVITY_LOG_FILE, 'utf-8');
+			activities = JSON.parse(data);
+		} catch {
+			activities = [];
+		}
+	}
+
+	activities.unshift(fullActivity);
+
+	// Keep only the most recent entries
+	if (activities.length > MAX_ACTIVITY_ENTRIES) {
+		activities = activities.slice(0, MAX_ACTIVITY_ENTRIES);
+	}
+
+	writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(activities, null, 2));
+	return fullActivity;
+}
+
+export function getRecentAgentActivity(limit: number = 20): AgentActivity[] {
+	ensureDataDirs();
+	if (!existsSync(ACTIVITY_LOG_FILE)) {
+		return [];
+	}
+	try {
+		const data = readFileSync(ACTIVITY_LOG_FILE, 'utf-8');
+		const activities: AgentActivity[] = JSON.parse(data);
+		return activities.slice(0, limit);
+	} catch {
+		return [];
+	}
+}
+
+export function getAgentActivityForTopic(topicId: string, limit: number = 10): AgentActivity[] {
+	const all = getRecentAgentActivity(MAX_ACTIVITY_ENTRIES);
+	return all.filter(a => a.topicId === topicId).slice(0, limit);
 }

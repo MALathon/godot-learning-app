@@ -198,7 +198,11 @@
 
 </div>
 
-<FloatingChat {topic} />
+<FloatingChat
+	{topic}
+	progress={data.serverProgress}
+	notes={progress.notes || ''}
+/>
 
 <style>
 	.topic-page {
