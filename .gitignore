@@ -10,6 +10,8 @@ data/settings.json
 data/progress.json
 data/agent_activity.json
 data/notebooks/
+data/lessons/
+data/extensions/
 __pycache__/
 *.pyc
 data-test/
