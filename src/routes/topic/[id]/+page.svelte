@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
-	import ChatSidebar from '$lib/components/ChatSidebar.svelte';
+	import FloatingChat from '$lib/components/FloatingChat.svelte';
 	import { progressStore } from '$lib/stores/progress.svelte';
 	import type { PageData } from './$types';
+
+	import type { CodeExample, Resource } from '$lib/data/topics';
 
 	let { data }: { data: PageData } = $props();
 
 	const topic = $derived(data.topic);
-	const extension = $derived(data.extension);
+	// extension comes from +page.server.ts
+	const extension = $derived((data as PageData & { extension?: { resources?: Resource[]; codeExamples?: CodeExample[] } }).extension);
 	const progress = $derived(progressStore.getTopicProgress(topic.id));
 	const initialNotes = $derived(progress.notes || '');
 
@@ -18,7 +21,6 @@
 
 	let notes = $state('');
 	let activeTab = $state<'content' | 'exercises' | 'notes'>('content');
-	let chatOpen = $state(false);
 
 	$effect(() => {
 		notes = initialNotes;
@@ -194,46 +196,11 @@
 		{/if}
 	</nav>
 
-	<button
-		class="chat-toggle"
-		class:open={chatOpen}
-		onclick={() => chatOpen = !chatOpen}
-		aria-label={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
-	>
-		{chatOpen ? '×' : '💬'}
-	</button>
 </div>
 
-<ChatSidebar {topic} bind:open={chatOpen} />
+<FloatingChat {topic} />
 
 <style>
-	.chat-toggle {
-		position: fixed;
-		bottom: var(--space-6);
-		right: var(--space-6);
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: var(--accent);
-		color: white;
-		font-size: var(--text-xl);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow: var(--shadow-lg);
-		z-index: 90;
-		transition: all var(--transition-fast);
-	}
-
-	.chat-toggle:hover {
-		background: var(--accent-hover);
-		transform: scale(1.05);
-	}
-
-	.chat-toggle.open {
-		right: calc(400px + var(--space-6));
-	}
-
 	.topic-page {
 		padding: var(--space-8);
 		max-width: 900px;
