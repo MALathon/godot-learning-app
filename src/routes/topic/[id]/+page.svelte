@@ -4,14 +4,21 @@
 	import FloatingChat from '$lib/components/FloatingChat.svelte';
 	import { progressStore } from '$lib/stores/progress.svelte';
 	import type { PageData } from './$types';
+	import type { TopicProgress } from '$lib/server/storage';
 
 	import type { CodeExample, Resource } from '$lib/data/topics';
 
-	let { data }: { data: PageData } = $props();
+	// Extended type to include server data that may not be in auto-generated types
+	type ExtendedPageData = PageData & {
+		extension?: { resources?: Resource[]; codeExamples?: CodeExample[] };
+		serverProgress?: TopicProgress;
+	};
+
+	let { data }: { data: ExtendedPageData } = $props();
 
 	const topic = $derived(data.topic);
 	// extension comes from +page.server.ts
-	const extension = $derived((data as PageData & { extension?: { resources?: Resource[]; codeExamples?: CodeExample[] } }).extension);
+	const extension = $derived(data.extension);
 	const progress = $derived(progressStore.getTopicProgress(topic.id));
 	const initialNotes = $derived(progress.notes || '');
 
@@ -200,7 +207,7 @@
 
 <FloatingChat
 	{topic}
-	progress={data.serverProgress}
+	progress={data.serverProgress ?? undefined}
 	notes={progress.notes || ''}
 />
 

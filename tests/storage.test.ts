@@ -35,8 +35,8 @@ describe('Extension Storage', () => {
 	it('should add resource to extension', () => {
 		const extension = {
 			topicId: 'game-loop',
-			resources: [],
-			codeExamples: []
+			resources: [] as Array<{ title: string; url: string; type: string; addedAt: string; addedBy: string }>,
+			codeExamples: [] as Array<{ title: string; language: string; code: string; explanation: string; addedAt: string; addedBy: string }>
 		};
 
 		extension.resources.push({
@@ -54,8 +54,8 @@ describe('Extension Storage', () => {
 	it('should add code example to extension', () => {
 		const extension = {
 			topicId: 'game-loop',
-			resources: [],
-			codeExamples: []
+			resources: [] as Array<{ title: string; url: string; type: string; addedAt: string; addedBy: string }>,
+			codeExamples: [] as Array<{ title: string; language: string; code: string; explanation: string; addedAt: string; addedBy: string }>
 		};
 
 		extension.codeExamples.push({

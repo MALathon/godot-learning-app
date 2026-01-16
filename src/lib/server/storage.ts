@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
 const DATA_DIR = join(process.cwd(), 'data');
@@ -43,7 +43,8 @@ export function getSettings(): Settings {
 	try {
 		const data = readFileSync(SETTINGS_FILE, 'utf-8');
 		return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read settings file: ${error instanceof Error ? error.message : error}`);
 		return DEFAULT_SETTINGS;
 	}
 }
@@ -84,7 +85,8 @@ export function getNotebook(topicId: string): Notebook {
 	try {
 		const data = readFileSync(filePath, 'utf-8');
 		return JSON.parse(data);
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read notebook for topic ${topicId}: ${error instanceof Error ? error.message : error}`);
 		return {
 			topicId,
 			messages: [],
@@ -139,7 +141,8 @@ export function getProgress(): Progress {
 	try {
 		const data = readFileSync(PROGRESS_FILE, 'utf-8');
 		return JSON.parse(data);
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read progress file: ${error instanceof Error ? error.message : error}`);
 		return { topics: {} };
 	}
 }
@@ -214,7 +217,8 @@ export function getTopicExtension(topicId: string): TopicExtension {
 	try {
 		const data = readFileSync(filePath, 'utf-8');
 		return JSON.parse(data);
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read topic extension for ${topicId}: ${error instanceof Error ? error.message : error}`);
 		return {
 			topicId,
 			resources: [],
@@ -343,7 +347,8 @@ export function getLesson(topicId: string, lessonId: string): Lesson | null {
 	try {
 		const data = readFileSync(filePath, 'utf-8');
 		return JSON.parse(data);
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read lesson ${lessonId} for topic ${topicId}: ${error instanceof Error ? error.message : error}`);
 		return null;
 	}
 }
@@ -363,8 +368,9 @@ export function getLessonsForTopic(topicId: string): Lesson[] {
 			try {
 				const data = readFileSync(join(topicDir, f), 'utf-8');
 				lessons.push(JSON.parse(data));
-			} catch {
-				// Skip invalid files
+			} catch (error) {
+				console.error(`Failed to read lesson file ${f} for topic ${topicId}: ${error instanceof Error ? error.message : error}`);
+				// Skip invalid files but log the issue
 			}
 		}
 	}
@@ -388,14 +394,15 @@ export function getAllLessons(): Record<string, Lesson[]> {
 		const topicPath = join(LESSONS_DIR, topicId);
 		// Skip files, only process directories
 		try {
-			const stat = require('fs').statSync(topicPath);
+			const stat = statSync(topicPath);
 			if (stat.isDirectory()) {
 				const lessons = getLessonsForTopic(topicId);
 				if (lessons.length > 0) {
 					allLessons[topicId] = lessons;
 				}
 			}
-		} catch {
+		} catch (error) {
+			console.error(`Failed to stat lesson directory ${topicId}: ${error instanceof Error ? error.message : error}`);
 			// Skip on error
 		}
 	}
@@ -406,7 +413,7 @@ export function getAllLessons(): Record<string, Lesson[]> {
 export function deleteLesson(topicId: string, lessonId: string): boolean {
 	const filePath = join(LESSONS_DIR, topicId, `${lessonId}.json`);
 	if (existsSync(filePath)) {
-		require('fs').unlinkSync(filePath);
+		unlinkSync(filePath);
 		return true;
 	}
 	return false;
@@ -442,7 +449,8 @@ export function logAgentActivity(activity: Omit<AgentActivity, 'id' | 'timestamp
 		try {
 			const data = readFileSync(ACTIVITY_LOG_FILE, 'utf-8');
 			activities = JSON.parse(data);
-		} catch {
+		} catch (error) {
+			console.error(`Failed to read activity log: ${error instanceof Error ? error.message : error}`);
 			activities = [];
 		}
 	}
@@ -467,7 +475,8 @@ export function getRecentAgentActivity(limit: number = 20): AgentActivity[] {
 		const data = readFileSync(ACTIVITY_LOG_FILE, 'utf-8');
 		const activities: AgentActivity[] = JSON.parse(data);
 		return activities.slice(0, limit);
-	} catch {
+	} catch (error) {
+		console.error(`Failed to read recent agent activity: ${error instanceof Error ? error.message : error}`);
 		return [];
 	}
 }

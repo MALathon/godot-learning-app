@@ -1,26 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { LETTA_URL, getAgentIds } from '$lib/server/letta';
 import type { RequestHandler } from './$types';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-
-const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
-
-// Load agent IDs from the letta folder
-function getAgentIds(): { gideon?: string; curator?: string; shared_blocks?: Record<string, string> } {
-	const agentIdsPath = join(process.cwd(), 'letta', 'agent_ids.json');
-
-	if (existsSync(agentIdsPath)) {
-		try {
-			const data = readFileSync(agentIdsPath, 'utf-8');
-			return JSON.parse(data);
-		} catch {
-			return {};
-		}
-	}
-
-	return {};
-}
 
 // GET - Retrieve agent memory blocks
 export const GET: RequestHandler = async ({ url }) => {

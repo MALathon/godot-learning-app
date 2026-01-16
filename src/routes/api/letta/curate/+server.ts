@@ -1,18 +1,32 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { logAgentActivity } from '$lib/server/storage';
+import { LETTA_URL, getAgentIds, getCuratorAgentId, getGideonAgentId } from '$lib/server/letta';
 import type { RequestHandler } from './$types';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 
-const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
-
-// Simple rate limiting for background curation
+// Simple rate limiting for background curation with cleanup
 const recentCurations = new Map<string, number>();
 const CURATION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between curations per topic
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // Clean up stale entries every 10 minutes
+
+// Periodic cleanup of stale rate limit entries
+let lastCleanup = Date.now();
+function cleanupStaleEntries() {
+	const now = Date.now();
+	if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
+
+	lastCleanup = now;
+	const cutoff = now - CURATION_COOLDOWN_MS;
+	for (const [key, timestamp] of recentCurations.entries()) {
+		if (timestamp < cutoff) {
+			recentCurations.delete(key);
+		}
+	}
+}
 
 function shouldSkipCuration(topicId: string, background: boolean): boolean {
 	if (!background) return false; // Manual triggers always proceed
+
+	cleanupStaleEntries(); // Clean up on each check
 
 	const key = topicId || 'global';
 	const lastCuration = recentCurations.get(key);
@@ -24,32 +38,6 @@ function shouldSkipCuration(topicId: string, background: boolean): boolean {
 
 	recentCurations.set(key, now);
 	return false;
-}
-
-// Load agent IDs from the letta folder
-function getAgentIds(): { gideon?: string; curator?: string } {
-	const agentIdsPath = join(process.cwd(), 'letta', 'agent_ids.json');
-	const legacyPath = join(process.cwd(), 'letta', 'agent_id.txt');
-
-	if (existsSync(agentIdsPath)) {
-		try {
-			const data = readFileSync(agentIdsPath, 'utf-8');
-			return JSON.parse(data);
-		} catch {
-			// Fall through to legacy
-		}
-	}
-
-	if (existsSync(legacyPath)) {
-		try {
-			const gideonId = readFileSync(legacyPath, 'utf-8').trim();
-			return { gideon: gideonId };
-		} catch {
-			// No agents available
-		}
-	}
-
-	return {};
 }
 
 // POST - Trigger curation
@@ -72,8 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 	}
 
-	const agentIds = getAgentIds();
-	const curatorId = agentIds.curator || agentIds.gideon;
+	const curatorId = getCuratorAgentId() || getGideonAgentId();
 
 	if (!curatorId) {
 		return json({
@@ -265,6 +252,8 @@ ACTION: Actually add content - don't just analyze. Use add_resource, add_code_ex
 // GET - Check curation status/capability
 export const GET: RequestHandler = async () => {
 	const agentIds = getAgentIds();
+	const gideonId = agentIds.gideon || null;
+	const curatorId = agentIds.curator || null;
 
 	// Check if Letta server is available
 	let lettaAvailable = false;
@@ -276,12 +265,12 @@ export const GET: RequestHandler = async () => {
 	}
 
 	return json({
-		available: lettaAvailable && !!(agentIds.curator || agentIds.gideon),
+		available: lettaAvailable && !!(curatorId || gideonId),
 		lettaServer: LETTA_URL,
 		lettaConnected: lettaAvailable,
 		agents: {
-			gideon: agentIds.gideon || null,
-			curator: agentIds.curator || null
+			gideon: gideonId,
+			curator: curatorId
 		},
 		modes: ['all', 'topic', 'analyze', 'generate', 'enrich']
 	});

@@ -6,7 +6,14 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url }) => {
 	const topicId = url.searchParams.get('topicId');
 	const limitParam = url.searchParams.get('limit');
-	const limit = limitParam ? parseInt(limitParam, 10) : 20;
+	let limit = limitParam ? parseInt(limitParam, 10) : 20;
+
+	// Validate limit parameter
+	if (isNaN(limit) || limit < 1) {
+		limit = 20;
+	} else if (limit > 100) {
+		limit = 100; // Cap at 100 to prevent abuse
+	}
 
 	if (topicId) {
 		const activities = getAgentActivityForTopic(topicId, limit);

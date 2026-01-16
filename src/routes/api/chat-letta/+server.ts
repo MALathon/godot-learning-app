@@ -1,63 +1,23 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { getNotebook, addMessageToNotebook, logAgentActivity } from '$lib/server/storage';
+import { LETTA_URL, INTERNAL_URL, getGideonAgentId } from '$lib/server/letta';
 import type { RequestHandler } from './$types';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-
-const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
-const INTERNAL_URL = env.INTERNAL_URL ?? 'http://localhost:5999';
 
 // Trigger background curation after a conversation
-async function triggerPostConversationCuration(topicId: string) {
-	try {
-		// Fire and forget - runs in background after conversation
-		fetch(`${INTERNAL_URL}/api/letta/curate`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				mode: 'topic',
-				topicId,
-				background: true,
-				trigger: 'post_conversation'
-			})
-		}).catch(() => {
-			// Silently ignore - background task
-		});
-	} catch {
-		// Ignore errors for background tasks
-	}
-}
-
-// Load agent IDs from the letta folder
-function getAgentIds(): { gideon?: string; curator?: string } {
-	const agentIdsPath = join(process.cwd(), 'letta', 'agent_ids.json');
-	const legacyPath = join(process.cwd(), 'letta', 'agent_id.txt');
-
-	if (existsSync(agentIdsPath)) {
-		try {
-			const data = readFileSync(agentIdsPath, 'utf-8');
-			return JSON.parse(data);
-		} catch {
-			// Fall through to legacy
-		}
-	}
-
-	if (existsSync(legacyPath)) {
-		try {
-			const gideonId = readFileSync(legacyPath, 'utf-8').trim();
-			return { gideon: gideonId };
-		} catch {
-			// No agents available
-		}
-	}
-
-	return {};
-}
-
-function getGideonAgentId(): string | null {
-	const ids = getAgentIds();
-	return ids.gideon || null;
+function triggerPostConversationCuration(topicId: string): void {
+	// Fire and forget - but log failures for observability
+	fetch(`${INTERNAL_URL}/api/letta/curate`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			mode: 'topic',
+			topicId,
+			background: true,
+			trigger: 'post_conversation'
+		})
+	}).catch((error) => {
+		console.error(`Background curation failed for topic ${topicId}:`, error.message);
+	});
 }
 
 export const POST: RequestHandler = async ({ request }) => {

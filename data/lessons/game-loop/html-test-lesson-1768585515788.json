@@ -1,0 +1,18 @@
+{
+  "topicId": "game-loop",
+  "title": "HTML Test Lesson 1768585515788",
+  "difficulty": "beginner",
+  "content": {
+    "introduction": "<script>alert(\"xss\")</script>",
+    "concepts": [
+      "<img src=x onerror=alert(1)>"
+    ],
+    "explanation": "<a href=\"javascript:alert(1)\">Click</a>",
+    "exercises": [],
+    "connections": []
+  },
+  "generatedFor": "Unknown trigger",
+  "id": "html-test-lesson-1768585515788",
+  "generatedAt": "2026-01-16T17:45:15.790Z",
+  "addedBy": "ai"
+}

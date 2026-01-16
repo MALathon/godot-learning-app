@@ -46,7 +46,6 @@
 	// Enhanced state
 	let showThinking = $state(true);
 	let currentThinking = $state<string | null>(null);
-	let activeTab = $state<'chat' | 'notes' | 'memory'>('chat');
 	let newContentCount = $state(0);
 	let showMemoryPanel = $state(false);
 	let memoryBlocks = $state<Array<{ label: string; value: string; isShared: boolean }>>([]);
@@ -56,7 +55,7 @@
 		progress?.exercisesCompleted?.filter(Boolean).length ?? 0
 	);
 	const totalExercises = $derived(topic.exercises.length);
-	const lastVisited = $derived(progress?.lastVisited);
+	const lastVisited = $derived(progress?.lastVisited ?? null);
 
 	onMount(async () => {
 		await loadNotebook();
@@ -235,7 +234,7 @@
 		} catch (e) {
 			if (e instanceof Error && e.name === 'AbortError') {
 				const lastMessage = messages[messages.length - 1];
-				if ('content' in lastMessage && lastMessage.role === 'assistant' && !lastMessage.content) {
+				if ('role' in lastMessage && lastMessage.role === 'assistant' && !lastMessage.content) {
 					messages = messages.slice(0, -1);
 				}
 			} else {

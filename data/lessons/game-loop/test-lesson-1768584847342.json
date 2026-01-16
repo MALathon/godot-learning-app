@@ -1,0 +1,21 @@
+{
+  "topicId": "game-loop",
+  "title": "Test Lesson 1768584847342",
+  "difficulty": "beginner",
+  "content": {
+    "introduction": "This is a test lesson.",
+    "concepts": [
+      "Test concept 1",
+      "Test concept 2"
+    ],
+    "explanation": "This explains the test topic.",
+    "exercises": [
+      "Try this exercise"
+    ],
+    "connections": []
+  },
+  "generatedFor": "E2E test",
+  "id": "test-lesson-1768584847342",
+  "generatedAt": "2026-01-16T17:34:07.344Z",
+  "addedBy": "ai"
+}
