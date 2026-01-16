@@ -319,6 +319,8 @@
 		}
 	}
 
+	let resetting = $state(false);
+
 	async function loadMemory() {
 		try {
 			const response = await fetch('/api/letta/memory?agent=gideon');
@@ -328,6 +330,26 @@
 			}
 		} catch (e) {
 			console.error('Failed to load memory:', e);
+		}
+	}
+
+	async function resetMemory() {
+		if (!confirm('Reset all agent memory? This will clear learning progress and curated content tracking.')) return;
+
+		resetting = true;
+		try {
+			const response = await fetch('/api/letta/reset', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ agent: 'all', blocks: 'all' })
+			});
+			if (response.ok) {
+				await loadMemory();
+			}
+		} catch (e) {
+			console.error('Failed to reset memory:', e);
+		} finally {
+			resetting = false;
 		}
 	}
 
@@ -465,7 +487,12 @@
 			<div class="memory-panel">
 				<div class="memory-header">
 					<span>What Gideon Knows</span>
-					<button onclick={() => showMemoryPanel = false}>x</button>
+					<div class="memory-actions">
+						<button class="reset-btn" onclick={resetMemory} disabled={resetting}>
+							{resetting ? '...' : 'Reset'}
+						</button>
+						<button onclick={() => showMemoryPanel = false}>x</button>
+					</div>
 				</div>
 				<div class="memory-content">
 					{#each memoryBlocks as block}
@@ -785,11 +812,35 @@
 		font-size: var(--text-sm);
 	}
 
+	.memory-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
 	.memory-header button {
 		background: transparent;
 		border: none;
 		color: var(--text-muted);
 		cursor: pointer;
+	}
+
+	.reset-btn {
+		font-size: var(--text-xs);
+		padding: 2px 8px;
+		background: var(--error-muted, rgba(255, 69, 58, 0.15)) !important;
+		color: var(--error) !important;
+		border-radius: var(--radius-sm);
+	}
+
+	.reset-btn:hover:not(:disabled) {
+		background: var(--error) !important;
+		color: white !important;
+	}
+
+	.reset-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.memory-content {
