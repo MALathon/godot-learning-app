@@ -15,12 +15,11 @@
 	let input = $state('');
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let hasApiKey = $state(false);
+	let lettaAvailable = $state(true); // Assume available, show error if not
 	let messagesContainer: HTMLElement | null = $state(null);
 	let abortController: AbortController | null = $state(null);
 
 	onMount(async () => {
-		await checkApiKey();
 		await loadNotebook();
 	});
 
@@ -32,18 +31,6 @@
 			});
 		}
 	});
-
-	async function checkApiKey() {
-		try {
-			const response = await fetch('/api/settings');
-			if (response.ok) {
-				const data = await response.json();
-				hasApiKey = data.hasApiKey;
-			}
-		} catch (e) {
-			console.error('Failed to check API key:', e);
-		}
-	}
 
 	async function loadNotebook() {
 		try {
@@ -172,9 +159,15 @@
 					messages = messages.slice(0, -1);
 				}
 			} else {
-				error = e instanceof Error ? e.message : 'Something went wrong';
+				const errorMessage = e instanceof Error ? e.message : 'Something went wrong';
+				error = errorMessage;
 				// Remove the placeholder messages on error
 				messages = messages.slice(0, -2);
+
+				// Check if Letta server is unavailable
+				if (errorMessage.includes('Letta') || errorMessage.includes('fetch')) {
+					lettaAvailable = false;
+				}
 			}
 		} finally {
 			loading = false;
@@ -291,10 +284,10 @@
 			</div>
 		</header>
 
-		{#if !hasApiKey}
+		{#if !lettaAvailable}
 			<div class="no-api-key">
-				<p>Configure your Anthropic API key in Settings to use the AI tutor.</p>
-				<p class="hint">Click the settings icon in the header.</p>
+				<p>AI tutor is unavailable. The Letta server may not be running.</p>
+				<p class="hint">Start the Letta server on localhost:8283</p>
 			</div>
 		{:else}
 			<div class="messages" bind:this={messagesContainer}>
