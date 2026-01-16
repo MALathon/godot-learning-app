@@ -16,3 +16,5 @@ data-test/
 data-test-lessons/
 letta/agent_id.txt
 letta/agent_ids.json
+test-results/
+playwright-report/
