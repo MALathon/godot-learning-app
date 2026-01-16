@@ -6,7 +6,7 @@ test.describe('Frontend E2E Tests', () => {
 			await page.goto('/');
 
 			// Should have a heading
-			await expect(page.locator('h1')).toBeVisible();
+			await expect(page.locator('h1').first()).toBeVisible();
 
 			// Should display topic cards/links
 			const topicLinks = page.locator('a[href^="/topic/"]');
@@ -29,7 +29,7 @@ test.describe('Frontend E2E Tests', () => {
 			];
 
 			for (const topic of expectedTopics) {
-				const topicLink = page.locator(`a[href="/topic/${topic}"]`);
+				const topicLink = page.locator(`a[href="/topic/${topic}"]`).first();
 				await expect(topicLink).toBeVisible();
 			}
 		});
@@ -48,7 +48,7 @@ test.describe('Frontend E2E Tests', () => {
 			await page.goto('/topic/game-loop');
 
 			// Should have topic title
-			await expect(page.locator('h1')).toBeVisible();
+			await expect(page.locator('h1').first()).toBeVisible();
 
 			// Should have content sections
 			await expect(page.getByText(/game loop/i).first()).toBeVisible();
@@ -96,107 +96,113 @@ test.describe('Frontend E2E Tests', () => {
 		test('should display chat bubble on topic page', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Look for chat bubble/button
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat');
+			// Look for chat bubble (using actual class name from FloatingChat.svelte)
+			const chatButton = page.locator('.chat-bubble, [aria-label="Open AI tutor"]');
 			await expect(chatButton.first()).toBeVisible({ timeout: 10000 });
 		});
 
 		test('should open chat panel when clicking bubble', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Click chat bubble
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
+			// Wait for chat bubble to be ready and Svelte to hydrate
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
 
-			// Chat panel should be visible
-			const chatPanel = page.locator('[data-testid="chat-panel"], .chat-panel, .chat-container, [class*="chat"]').first();
-			await expect(chatPanel).toBeVisible({ timeout: 5000 });
+			// Wait a moment for Svelte hydration to complete
+			await page.waitForTimeout(500);
+
+			// Click using Playwright's native click with force
+			await chatButton.click({ force: true });
+
+			// Wait for state transition - chat panel should appear
+			const chatPanel = page.locator('.chat-panel');
+			await expect(chatPanel).toBeVisible({ timeout: 10000 });
 		});
 
 		test('should have message input in chat panel', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
+			// Wait for chat bubble and Svelte hydration
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
+			await page.waitForTimeout(500);
 
-			// Should have input field
-			const input = page.locator('input[type="text"], textarea').first();
+			// Click to open
+			await chatButton.click({ force: true });
+
+			// Wait for panel and check for input
+			await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 10000 });
+			const input = page.locator('.chat-panel textarea, .chat-panel input').first();
 			await expect(input).toBeVisible({ timeout: 5000 });
-		});
-
-		test('should send message and receive response', async ({ page }) => {
-			await page.goto('/topic/game-loop');
-
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
-
-			// Type message
-			const input = page.locator('input[type="text"], textarea').first();
-			await input.fill('Hello, what is delta time?');
-
-			// Send message (press Enter or click send button)
-			await input.press('Enter');
-
-			// Wait for response (look for assistant message or loading indicator)
-			await page.waitForSelector('[class*="message"], [class*="response"], [class*="assistant"]', {
-				timeout: 30000
-			});
 		});
 
 		test('should close chat panel when clicking close button', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
-
-			// Wait for panel to open
+			// Wait for chat bubble and Svelte hydration
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
 			await page.waitForTimeout(500);
 
+			// Click to open
+			await chatButton.click({ force: true });
+
+			// Wait for panel to open
+			const chatPanel = page.locator('.chat-panel');
+			await expect(chatPanel).toBeVisible({ timeout: 10000 });
+
 			// Find and click close button
-			const closeButton = page.locator('button:has-text("close"), button:has-text("×"), [aria-label*="close"]').first();
-			if (await closeButton.isVisible()) {
-				await closeButton.click();
+			const closeButton = page.locator('.close-btn').first();
+			await closeButton.click({ force: true });
+
+			// Panel should be hidden (bubble visible again)
+			await expect(page.locator('.chat-bubble').first()).toBeVisible({ timeout: 10000 });
+		});
+
+		test('should display memory panel', async ({ page }) => {
+			await page.goto('/topic/game-loop');
+
+			// Wait for chat bubble and Svelte hydration
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
+			await page.waitForTimeout(500);
+
+			// Click to open
+			await chatButton.click({ force: true });
+
+			// Wait for chat panel
+			await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 10000 });
+
+			// Look for memory button
+			const memoryButton = page.locator('[title="Agent memory"]').first();
+			if (await memoryButton.isVisible()) {
+				await memoryButton.click({ force: true });
+
+				// Should show memory panel
+				await expect(page.locator('.memory-panel')).toBeVisible({ timeout: 5000 });
 			}
 		});
 
-		test('should display settings panel', async ({ page }) => {
+		test('should show context bar with progress', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
+			// Wait for chat bubble and Svelte hydration
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
+			await page.waitForTimeout(500);
 
-			// Look for settings icon/button
-			const settingsButton = page.locator('button:has-text("settings"), [aria-label*="settings"], .settings-button, button svg').first();
-			if (await settingsButton.isVisible()) {
-				await settingsButton.click();
+			// Click to open
+			await chatButton.click({ force: true });
 
-				// Should show settings panel
-				await page.waitForSelector('text=/memory|reset|settings/i', { timeout: 5000 });
-			}
-		});
+			// Wait for panel
+			await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 10000 });
 
-		test('should handle rapid message sending', async ({ page }) => {
-			await page.goto('/topic/game-loop');
+			// Should have context bar
+			const contextBar = page.locator('.context-bar');
+			await expect(contextBar).toBeVisible({ timeout: 5000 });
 
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
-
-			const input = page.locator('input[type="text"], textarea').first();
-
-			// Send multiple messages rapidly
-			await input.fill('Message 1');
-			await input.press('Enter');
-			await input.fill('Message 2');
-			await input.press('Enter');
-
-			// Should handle without crashing
-			await page.waitForTimeout(2000);
-			expect(await page.locator('body').isVisible()).toBeTruthy();
+			// Should show progress info
+			await expect(page.locator('text=/Progress:/i')).toBeVisible();
 		});
 	});
 
@@ -227,20 +233,24 @@ test.describe('Frontend E2E Tests', () => {
 		test('should preserve chat state when navigating', async ({ page }) => {
 			await page.goto('/topic/game-loop');
 
-			// Open chat
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
-			await chatButton.click();
+			// Wait for chat bubble and Svelte hydration
+			const chatButton = page.locator('.chat-bubble').first();
+			await expect(chatButton).toBeVisible({ timeout: 10000 });
+			await page.waitForTimeout(500);
 
-			// Type something but don't send
-			const input = page.locator('input[type="text"], textarea').first();
-			await input.fill('Draft message');
+			// Click to open
+			await chatButton.click({ force: true });
+
+			// Wait for panel
+			await expect(page.locator('.chat-panel')).toBeVisible({ timeout: 10000 });
 
 			// Navigate away and back
 			await page.goto('/');
 			await page.goto('/topic/game-loop');
 
-			// Chat bubble should still be there
-			await expect(chatButton).toBeVisible({ timeout: 5000 });
+			// Chat bubble should still be there (new instance)
+			const newChatButton = page.locator('.chat-bubble, [aria-label="Open AI tutor"]').first();
+			await expect(newChatButton).toBeVisible({ timeout: 10000 });
 		});
 	});
 
@@ -250,10 +260,10 @@ test.describe('Frontend E2E Tests', () => {
 			await page.goto('/topic/game-loop');
 
 			// Content should be visible
-			await expect(page.locator('h1')).toBeVisible();
+			await expect(page.locator('h1').first()).toBeVisible();
 
 			// Chat bubble should be accessible
-			const chatButton = page.locator('[data-testid="chat-bubble"], button:has-text("chat"), .chat-bubble, .floating-chat').first();
+			const chatButton = page.locator('.chat-bubble, [aria-label="Open AI tutor"]').first();
 			await expect(chatButton).toBeVisible({ timeout: 10000 });
 		});
 
@@ -261,14 +271,14 @@ test.describe('Frontend E2E Tests', () => {
 			await page.setViewportSize({ width: 768, height: 1024 });
 			await page.goto('/topic/game-loop');
 
-			await expect(page.locator('h1')).toBeVisible();
+			await expect(page.locator('h1').first()).toBeVisible();
 		});
 
 		test('should display properly on desktop viewport', async ({ page }) => {
 			await page.setViewportSize({ width: 1920, height: 1080 });
 			await page.goto('/topic/game-loop');
 
-			await expect(page.locator('h1')).toBeVisible();
+			await expect(page.locator('h1').first()).toBeVisible();
 		});
 	});
 

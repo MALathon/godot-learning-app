@@ -10,7 +10,7 @@ export default defineConfig({
 	timeout: 60000, // 60s timeout for tests involving Letta API calls
 
 	use: {
-		baseURL: 'http://localhost:5173',
+		baseURL: 'http://localhost:5180',
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure'
 	},
@@ -23,9 +23,9 @@ export default defineConfig({
 	],
 
 	webServer: {
-		command: 'npm run dev',
-		url: 'http://localhost:5173',
-		reuseExistingServer: !process.env.CI,
+		command: 'npm run dev -- --port 5180',
+		url: 'http://localhost:5180',
+		reuseExistingServer: true,
 		timeout: 120000
 	}
 });
