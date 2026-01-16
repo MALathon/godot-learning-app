@@ -1,0 +1,2 @@
+letta-client>=0.5.0
+requests>=2.28.0

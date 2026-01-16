@@ -1,0 +1,29 @@
+{
+  "topicId": "game-loop",
+  "resources": [
+    {
+      "title": "Godot Official Documentation - Main Loop",
+      "url": "https://docs.godotengine.org/en/stable/tutorials/scripting/main_loop.html",
+      "type": "docs",
+      "addedAt": "2026-01-16T05:06:18.906Z",
+      "addedBy": "ai"
+    },
+    {
+      "title": "Godot Documentation - Delta Time and Frame Rate",
+      "url": "https://docs.godotengine.org/en/stable/tutorials/misc/jitter_stutter.html",
+      "type": "docs",
+      "addedAt": "2026-01-16T05:06:22.544Z",
+      "addedBy": "ai"
+    }
+  ],
+  "codeExamples": [
+    {
+      "title": "Frame-Independent Movement with Delta Time",
+      "language": "gdscript",
+      "code": "extends Node2D\n\n# Movement speed in pixels per second\n@export var speed: float = 200.0\nvar velocity: Vector2 = Vector2.ZERO\n\nfunc _ready():\n    # Set initial movement direction\n    velocity = Vector2(1, 0) * speed\n\nfunc _process(delta: float):\n    # Use delta to make movement frame-independent\n    # Without delta: position would depend on framerate\n    # With delta: consistent movement regardless of FPS\n    position += velocity * delta\n    \n    # Bounce off screen edges\n    var screen_size = get_viewport().get_visible_rect().size\n    if position.x <= 0 or position.x >= screen_size.x:\n        velocity.x *= -1\n    if position.y <= 0 or position.y >= screen_size.y:\n        velocity.y *= -1",
+      "explanation": "This demonstrates the core game loop concept of delta time. The `_process(delta)` function is called every frame, and delta represents the time elapsed since the last frame. By multiplying movement by delta, we ensure consistent speed regardless of framerate - crucial for fair gameplay. Without delta, the object would move faster on high-FPS systems and slower on low-FPS systems.",
+      "addedAt": "2026-01-16T05:06:30.306Z",
+      "addedBy": "ai"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "topicId": "scene-tree",
+  "resources": [
+    {
+      "title": "Godot Documentation - Scene Tree",
+      "url": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/scene_tree.html",
+      "type": "docs",
+      "addedAt": "2026-01-16T05:06:38.611Z",
+      "addedBy": "ai"
+    }
+  ],
+  "codeExamples": [
+    {
+      "title": "Tic-Tac-Toe Board Hierarchy",
+      "language": "gdscript",
+      "code": "extends Node2D\nclass_name TicTacToeBoard\n\n# The board is the parent, cells are children\n@export var cell_scene: PackedScene\n@export var board_size: Vector2 = Vector2(3, 3)\n@export var cell_spacing: float = 100.0\n\nvar cells: Array[Array] = []\n\nfunc _ready():\n    create_board()\n\nfunc create_board():\n    # Create a 3x3 grid of cells as child nodes\n    for row in range(board_size.y):\n        var cell_row: Array[Node] = []\n        for col in range(board_size.x):\n            # Instantiate cell as child node\n            var cell = cell_scene.instantiate()\n            add_child(cell)\n            \n            # Position relative to parent (this board)\n            var pos = Vector2(col * cell_spacing, row * cell_spacing)\n            cell.position = pos\n            \n            # Store reference for game logic\n            cell_row.append(cell)\n            \n            # Connect signals (child to parent communication)\n            cell.cell_clicked.connect(_on_cell_clicked.bind(row, col))\n        \n        cells.append(cell_row)\n\nfunc _on_cell_clicked(row: int, col: int):\n    print(\"Cell clicked at: \", row, \", \", col)\n    # Game logic here - the parent manages game state\n    # while children (cells) only handle their own display",
+      "explanation": "This shows how scene trees work in practice for a tic-tac-toe game. The board is the parent node that manages overall game state, while individual cells are child nodes that handle their own input and display. Parent-child relationships enable transform inheritance (cell positions are relative to board), organized structure, and clear communication patterns via signals. Each cell only knows about itself, while the parent coordinates the overall game.",
+      "addedAt": "2026-01-16T05:06:50.043Z",
+      "addedBy": "ai"
+    }
+  ]
+}

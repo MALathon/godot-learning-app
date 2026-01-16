@@ -1,0 +1,22 @@
+{
+  "topicId": "signals",
+  "resources": [
+    {
+      "title": "Godot Documentation - Using Signals",
+      "url": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html",
+      "type": "docs",
+      "addedAt": "2026-01-16T05:06:55.047Z",
+      "addedBy": "ai"
+    }
+  ],
+  "codeExamples": [
+    {
+      "title": "Tic-Tac-Toe Cell with Signal Communication",
+      "language": "gdscript",
+      "code": "extends Control\nclass_name TicTacToeCell\n\n# Define custom signal - this is the \"publish\" part of publish-subscribe\nsignal cell_clicked\n\n@export var cell_size: Vector2 = Vector2(90, 90)\n@export var background_color: Color = Color.WHITE\n@export var hover_color: Color = Color.LIGHT_GRAY\n\nvar cell_state: String = \"\"  # \"\", \"X\", or \"O\"\nvar is_occupied: bool = false\n\nfunc _ready():\n    # Set up the cell appearance\n    custom_minimum_size = cell_size\n    \n    # Connect built-in signals to our custom logic\n    mouse_entered.connect(_on_mouse_entered)\n    mouse_exited.connect(_on_mouse_exited)\n    gui_input.connect(_on_gui_input)\n\nfunc _on_gui_input(event: InputEvent):\n    if event is InputEventMouseButton:\n        if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:\n            if not is_occupied:\n                # Emit our custom signal - we don't know who's listening!\n                # This is loose coupling - the cell doesn't need to know\n                # about the board, game manager, or any other systems\n                cell_clicked.emit()\n\nfunc _on_mouse_entered():\n    if not is_occupied:\n        modulate = hover_color\n\nfunc _on_mouse_exited():\n    modulate = Color.WHITE\n\nfunc set_cell_value(value: String):\n    # Called by parent/game manager to update cell\n    cell_state = value\n    is_occupied = true\n    # Update visual representation here\n    queue_redraw()\n\nfunc _draw():\n    # Draw the cell background and content\n    draw_rect(Rect2(Vector2.ZERO, size), background_color)\n    if cell_state != \"\":\n        var font = ThemeDB.fallback_font\n        var font_size = 48\n        var text_pos = size / 2 - font.get_string_size(cell_state, 0, -1, font_size) / 2\n        draw_string(font, text_pos, cell_state, 0, -1, font_size, Color.BLACK)",
+      "explanation": "This demonstrates the Observer pattern through signals. The cell emits a `cell_clicked` signal when clicked, but doesn't know or care who's listening. This creates loose coupling - the cell focuses only on its own state and behavior, while other systems (like the game board) can subscribe to be notified of clicks. The cell can have multiple listeners (UI updates, sound effects, game logic) without needing to know about any of them. This makes the code more modular and easier to extend.",
+      "addedAt": "2026-01-16T05:07:08.927Z",
+      "addedBy": "ai"
+    }
+  ]
+}

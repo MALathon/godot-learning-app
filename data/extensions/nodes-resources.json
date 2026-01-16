@@ -1,0 +1,29 @@
+{
+  "topicId": "nodes-resources",
+  "resources": [
+    {
+      "title": "Godot Documentation - Nodes and Resources",
+      "url": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html",
+      "type": "docs",
+      "addedAt": "2026-01-16T05:09:15.237Z",
+      "addedBy": "ai"
+    },
+    {
+      "title": "GDQuest - Understanding Nodes and Resources",
+      "url": "https://www.gdquest.com/tutorial/godot/learning-path/beginner/nodes-and-resources/",
+      "type": "video",
+      "addedAt": "2026-01-16T05:09:19.309Z",
+      "addedBy": "ai"
+    }
+  ],
+  "codeExamples": [
+    {
+      "title": "Tic-Tac-Toe: Nodes vs Resources Example",
+      "language": "gdscript",
+      "code": "# GameState.gd - This is a RESOURCE (data container)\n# Resources are for data storage and can be saved/loaded\nextends Resource\nclass_name GameState\n\n@export var player_turn: String = \"X\"\n@export var board_state: Array[String] = [\"\", \"\", \"\", \"\", \"\", \"\", \"\", \"\", \"\"]\n@export var game_over: bool = false\n@export var winner: String = \"\"\n@export var moves_count: int = 0\n\nfunc make_move(position: int, player: String) -> bool:\n    if board_state[position] == \"\" and not game_over:\n        board_state[position] = player\n        moves_count += 1\n        player_turn = \"O\" if player == \"X\" else \"X\"\n        check_game_over()\n        return true\n    return false\n\nfunc check_game_over():\n    # Check for winner or tie\n    # Implementation details...\n    pass\n\n---\n\n# GameManager.gd - This is a NODE (behavior and scene management)\n# Nodes are for behavior, scene tree management, and processing\nextends Node\nclass_name GameManager\n\n@export var game_state: GameState  # Resource reference\n@export var board: TicTacToeBoard   # Node reference\n\nfunc _ready():\n    # Create or load the game state resource\n    if not game_state:\n        game_state = GameState.new()\n    \n    # Connect to board signals (node communication)\n    if board:\n        board.cell_clicked.connect(_on_cell_clicked)\n\nfunc _on_cell_clicked(position: int):\n    # Use the resource to track game state\n    var success = game_state.make_move(position, game_state.player_turn)\n    \n    if success:\n        # Update the node visuals based on resource data\n        board.update_cell_display(position, game_state.board_state[position])\n        \n        if game_state.game_over:\n            show_game_over_screen()\n\nfunc save_game():\n    # Resources can be easily saved to disk\n    ResourceSaver.save(game_state, \"user://savegame.tres\")\n\nfunc load_game():\n    # Resources can be easily loaded from disk\n    var loaded_state = ResourceLoader.load(\"user://savegame.tres\") as GameState\n    if loaded_state:\n        game_state = loaded_state\n        # Update node visuals based on loaded resource data\n        board.restore_from_state(game_state.board_state)",
+      "explanation": "This example shows the key difference between Nodes and Resources in Godot:\n\n**Resources (GameState):**\n- Store data and state\n- Can be easily saved/loaded to disk\n- Don't appear in the scene tree\n- Focused on data structure and logic\n- Lightweight and serializable\n\n**Nodes (GameManager, TicTacToeBoard):**\n- Handle behavior and scene management\n- Live in the scene tree\n- Process input, rendering, and updates\n- Manage other nodes and resources\n- Handle the game loop and user interaction\n\nThink of resources as \"what the game knows\" (data) and nodes as \"what the game does\" (behavior). This separation makes your code more organized and enables powerful features like save/load systems.",
+      "addedAt": "2026-01-16T05:09:36.038Z",
+      "addedBy": "ai"
+    }
+  ]
+}
