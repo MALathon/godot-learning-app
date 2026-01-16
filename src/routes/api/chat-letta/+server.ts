@@ -6,6 +6,28 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
+const INTERNAL_URL = env.INTERNAL_URL ?? 'http://localhost:5999';
+
+// Trigger background curation after a conversation
+async function triggerPostConversationCuration(topicId: string) {
+	try {
+		// Fire and forget - runs in background after conversation
+		fetch(`${INTERNAL_URL}/api/letta/curate`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				mode: 'topic',
+				topicId,
+				background: true,
+				trigger: 'post_conversation'
+			})
+		}).catch(() => {
+			// Silently ignore - background task
+		});
+	} catch {
+		// Ignore errors for background tasks
+	}
+}
 
 // Load agent IDs from the letta folder
 function getAgentIds(): { gideon?: string; curator?: string } {
@@ -393,6 +415,9 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 						content: fullResponse,
 						timestamp: new Date().toISOString()
 					});
+
+					// Trigger background curation after conversation
+					triggerPostConversationCuration(topicId);
 				}
 
 				sendEvent('done', { notebook: getNotebook(topicId) });

@@ -7,6 +7,25 @@ import { join } from 'path';
 
 const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
 
+// Simple rate limiting for background curation
+const recentCurations = new Map<string, number>();
+const CURATION_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between curations per topic
+
+function shouldSkipCuration(topicId: string, background: boolean): boolean {
+	if (!background) return false; // Manual triggers always proceed
+
+	const key = topicId || 'global';
+	const lastCuration = recentCurations.get(key);
+	const now = Date.now();
+
+	if (lastCuration && (now - lastCuration) < CURATION_COOLDOWN_MS) {
+		return true; // Skip - too recent
+	}
+
+	recentCurations.set(key, now);
+	return false;
+}
+
 // Load agent IDs from the letta folder
 function getAgentIds(): { gideon?: string; curator?: string } {
 	const agentIdsPath = join(process.cwd(), 'letta', 'agent_ids.json');
@@ -42,7 +61,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
-	const { mode = 'all', topicId } = body;
+	const { mode = 'all', topicId, contentType, background = false } = body;
+
+	// Rate limit background curations
+	if (shouldSkipCuration(topicId, background)) {
+		return json({
+			success: true,
+			skipped: true,
+			message: 'Curation skipped - recent curation still fresh'
+		});
+	}
 
 	const agentIds = getAgentIds();
 	const curatorId = agentIds.curator || agentIds.gideon;
@@ -57,20 +85,64 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Build the curation prompt based on mode
 	let curatePrompt: string;
 
-	if (mode === 'topic' && topicId) {
+	if (mode === 'generate' && topicId) {
+		// Content generation mode - actively create new materials
+		const typeHint = contentType ? ` Focus on creating: ${contentType}.` : '';
+		curatePrompt = `
+You are now in CONTENT GENERATION mode for topic: ${topicId}${typeHint}
+
+Your task is to CREATE NEW LEARNING MATERIALS. Follow these steps:
+
+1. RESEARCH PHASE:
+   - Use get_current_extensions('${topicId}') to see what already exists
+   - Use get_conversation_details('${topicId}') to understand what the student struggled with
+   - Use web_search to find HIGH-QUALITY resources about this topic
+   - Search for: official Godot docs, GDQuest tutorials, game dev best practices
+
+2. RESOURCE CURATION (add 2-3 resources):
+   For each good resource you find, use add_resource with:
+   - topic_id: "${topicId}"
+   - title: Clear, descriptive title
+   - url: The actual URL
+   - type: "docs" | "video" | "book" | "source"
+   - description: Why this resource is helpful (2-3 sentences)
+
+3. CODE EXAMPLE CREATION (add 1-2 examples):
+   Create practical code examples using add_code_example with:
+   - topic_id: "${topicId}"
+   - title: What the example demonstrates
+   - language: "gdscript" or "cpp"
+   - code: Working, well-commented code
+   - explanation: Step-by-step breakdown
+
+4. LESSON GENERATION (if appropriate):
+   If the topic needs deeper explanation, use add_lesson with:
+   - topic_id: "${topicId}"
+   - title: Lesson title
+   - difficulty: "beginner" | "intermediate" | "advanced"
+   - introduction: Why this matters
+   - concepts: Array of key points
+   - explanation: Detailed markdown explanation
+   - exercises: Practice prompts
+   - connections: Related topics
+
+ACTION REQUIRED: You MUST use add_resource, add_code_example, or add_lesson tools.
+Do not just analyze - actually CREATE content now.
+		`.trim();
+	} else if (mode === 'topic' && topicId) {
 		curatePrompt = `
 Please curate content specifically for the topic: ${topicId}
 
 1. Use get_conversation_details('${topicId}') to see what the student asked about this topic
 2. Use get_student_notes('${topicId}') to see their personal notes
-3. Use get_current_extensions to check what's already been added
+3. Use get_current_extensions('${topicId}') to check what's already been added
 4. Based on the conversation and notes:
    - Identify specific questions or confusion points
    - Find 1-2 highly relevant resources using web_search
    - Create a code example if it would help clarify a concept
    - Consider generating a focused lesson if there's a pattern of confusion
 
-Remember: Quality over quantity. Only add content that directly addresses the student's needs.
+ACTION: Actually add the content using add_resource, add_code_example, or add_lesson tools.
 		`.trim();
 	} else if (mode === 'analyze') {
 		curatePrompt = `
@@ -88,8 +160,27 @@ Provide insights on:
 
 Update your memory with these insights for future curation.
 		`.trim();
+	} else if (mode === 'enrich') {
+		// Enrich all topics with baseline content
+		curatePrompt = `
+You are in ENRICHMENT mode. Your goal is to add valuable content to topics that need it.
+
+1. Use get_topics to see all available topics
+2. For each topic, use get_current_extensions to check existing content
+3. For topics with FEW resources (< 3), use web_search to find good materials
+4. ADD at least one resource or code example to topics that need it
+
+Priority order for resources:
+1. Official Godot documentation (docs.godotengine.org)
+2. GDQuest tutorials (gdquest.com)
+3. Game Programming Patterns (gameprogrammingpatterns.com)
+4. High-quality YouTube tutorials
+
+ACTION REQUIRED: Use add_resource for each good resource you find.
+Target: Add content to at least 3 different topics.
+		`.trim();
 	} else {
-		// Full curation
+		// Full curation (default)
 		curatePrompt = `
 Please perform a comprehensive curation session:
 
@@ -110,7 +201,7 @@ Focus on:
 - Game Programming Patterns book references
 - Clear, beginner-friendly explanations
 
-Update your memory with what you've learned about the student's progress.
+ACTION: Actually add content - don't just analyze. Use add_resource, add_code_example, or add_lesson.
 		`.trim();
 	}
 
@@ -192,6 +283,6 @@ export const GET: RequestHandler = async () => {
 			gideon: agentIds.gideon || null,
 			curator: agentIds.curator || null
 		},
-		modes: ['all', 'topic', 'analyze']
+		modes: ['all', 'topic', 'analyze', 'generate', 'enrich']
 	});
 };

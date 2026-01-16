@@ -7,3 +7,12 @@ build/
 *.log
 .DS_Store
 data/settings.json
+data/progress.json
+data/agent_activity.json
+data/notebooks/
+__pycache__/
+*.pyc
+data-test/
+data-test-lessons/
+letta/agent_id.txt
+letta/agent_ids.json

@@ -545,9 +545,25 @@ def create_agents():
     print(f"  Tools: {len(gideon_tools) + 1}")
 
     # =========================================================================
-    # Create Curator (Sleeptime Agent for background processing)
+    # Detect Auto-Created Sleeptime Agent
     # =========================================================================
-    print("\nCreating Curator (Background Agent)...")
+    # With enable_sleeptime=True, Letta automatically creates a sleeptime agent
+    print("\nDetecting native sleeptime agent...")
+    sleeptime_agent_id = None
+    try:
+        all_agents = client.agents.list()
+        for agent in all_agents:
+            if "sleeptime" in agent.name.lower() and gideon.name in agent.name:
+                sleeptime_agent_id = agent.id
+                print(f"  Found: {agent.name} (id: {agent.id})")
+                break
+    except Exception as e:
+        print(f"  Could not detect sleeptime agent: {e}")
+
+    # =========================================================================
+    # Create Curator (Manual fallback for direct curation triggers)
+    # =========================================================================
+    print("\nCreating Curator (Manual curation agent)...")
 
     curator = client.agents.create(
         name="curator-agent",
@@ -560,7 +576,7 @@ def create_agents():
         ],
         block_ids=[learning_progress_block.id, curated_content_block.id],
         tools=curator_tools + ["web_search"],
-        description="Curator - Background agent for proactive content curation"
+        description="Curator - Manual curation agent for triggered content generation"
     )
 
     print(f"  Agent ID: {curator.id}")
@@ -573,6 +589,7 @@ def create_agents():
     agent_ids = {
         "gideon": gideon.id,
         "curator": curator.id,
+        "sleeptime": sleeptime_agent_id,
         "shared_blocks": {
             "learning_progress": learning_progress_block.id,
             "curated_content": curated_content_block.id
@@ -646,9 +663,7 @@ def main():
     except Exception as e:
         print(f"Cannot reach learning app: {e}")
         print("  Make sure your app is running on port 5999")
-        proceed = input("\nContinue anyway? (y/n): ").strip().lower()
-        if proceed != 'y':
-            exit(1)
+        print("  Continuing anyway - tools will work once app is running...")
 
     # Create agents
     gideon, curator = create_agents()
@@ -657,25 +672,37 @@ def main():
     print("Setup complete!")
     print()
     print("Multi-Agent System:")
-    print(f"  Gideon (Chat):    {gideon.id}")
-    print(f"  Curator (Background): {curator.id}")
+    print(f"  Gideon (Chat):        {gideon.id}")
+    print(f"  Curator (Manual):     {curator.id}")
+    if sleeptime_agent_id:
+        print(f"  Sleeptime (Auto):     {sleeptime_agent_id}")
+    print()
+    print("Background Processing:")
+    if sleeptime_agent_id:
+        print("  - Native sleeptime agent runs automatically")
+    print("  - Curator handles manual curation triggers")
     print()
     print("Shared Memory Blocks:")
     print("  - learning_progress: Tracks learning journey")
     print("  - curated_content: Tracks what has been added")
     print()
+    print("Curation happens via:")
+    print("  1. Topic visit triggers (automatic background)")
+    print("  2. Post-conversation triggers (automatic background)")
+    print("  3. Manual curation: POST /api/letta/curate")
+    print()
     print("To interact with agents:")
     print(f"  - Letta ADE: http://localhost:8283")
-    print(f"  - CLI: python chat_with_agent.py")
-    print(f"  - Trigger curation: python chat_with_agent.py --curate")
     print("=" * 60)
 
-    # Ask if user wants to test
-    test = input("\nTest both agents? (y/n): ").strip().lower()
-    if test == 'y':
-        test_agent(gideon.id, "Gideon")
-        test_agent(curator.id, "Curator")
+    return gideon, curator
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    gideon, curator = main()
+
+    # Test if --test flag is passed
+    if "--test" in sys.argv:
+        test_agent(gideon.id, "Gideon")
+        test_agent(curator.id, "Curator")

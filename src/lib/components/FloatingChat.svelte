@@ -303,21 +303,6 @@
 		}
 	}
 
-	async function triggerCuration() {
-		try {
-			const response = await fetch('/api/letta/curate', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ mode: 'topic', topicId: topic.id })
-			});
-			if (response.ok) {
-				// Show a notification or update UI
-				await checkNewContent();
-			}
-		} catch (e) {
-			console.error('Failed to trigger curation:', e);
-		}
-	}
 
 	let resetting = $state(false);
 
@@ -477,9 +462,11 @@
 				<span class="context-label">Last:</span>
 				<span class="context-value">{formatTimeAgo(lastVisited)}</span>
 			</span>
-			<button class="curate-btn" onclick={triggerCuration} title="Find resources for this topic">
-				Curate
-			</button>
+			{#if newContentCount > 0}
+				<span class="new-content-indicator" title="Curator added new content">
+					+{newContentCount} new
+				</span>
+			{/if}
 		</div>
 
 		<!-- Memory Panel (overlay) -->
@@ -770,21 +757,20 @@
 		font-weight: 500;
 	}
 
-	.curate-btn {
+	.new-content-indicator {
 		margin-left: auto;
 		padding: 2px 8px;
-		background: var(--accent-muted);
-		color: var(--accent);
-		border: none;
+		background: var(--success-muted, rgba(48, 209, 88, 0.15));
+		color: var(--success);
 		border-radius: var(--radius-sm);
 		font-size: var(--text-xs);
 		font-weight: 500;
-		cursor: pointer;
+		animation: pulse 2s ease-in-out infinite;
 	}
 
-	.curate-btn:hover {
-		background: var(--accent);
-		color: white;
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.6; }
 	}
 
 	/* Memory Panel */
