@@ -27,7 +27,9 @@
 	// Reload notebook when topic changes
 	$effect(() => {
 		if (topic.id) {
-			loadNotebook();
+			loadNotebook().catch(e => {
+				console.error('Failed to load notebook:', e);
+			});
 		}
 	});
 
@@ -210,11 +212,34 @@
 		}
 	}
 
+	/**
+	 * Escape HTML to prevent XSS attacks.
+	 */
+	function escapeHtml(text: string): string {
+		return text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
+	}
+
+	/**
+	 * Format message content with basic markdown support.
+	 * Escapes HTML first to prevent XSS, then applies formatting.
+	 */
 	function formatMessage(content: string): string {
-		return content
+		// First escape HTML to prevent XSS
+		const escaped = escapeHtml(content);
+
+		return escaped
+			// Code blocks: ```lang\ncode``` -> <pre><code>code</code></pre>
 			.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+			// Inline code: `code` -> <code>code</code>
 			.replace(/`([^`]+)`/g, '<code>$1</code>')
+			// Bold: **text** -> <strong>text</strong>
 			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+			// Line breaks
 			.replace(/\n/g, '<br>');
 	}
 

@@ -1,13 +1,31 @@
 import { json } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import { getNotebook, addMessageToNotebook } from '$lib/server/storage';
 import type { RequestHandler } from './$types';
 
-const LETTA_URL = 'http://localhost:8283';
-const AGENT_ID = 'agent-35d63804-8335-4f62-b363-0bdb415312cb';
+const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
+const AGENT_ID = env.LETTA_AGENT_ID ?? 'agent-35d63804-8335-4f62-b363-0bdb415312cb';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json();
+	let body;
+	try {
+		body = await request.json();
+	} catch {
+		return json({ error: 'Invalid JSON body' }, { status: 400 });
+	}
+
 	const { topicId, message, topicContext, stream = false } = body;
+
+	// Input validation
+	if (!topicId || typeof topicId !== 'string') {
+		return json({ error: 'topicId is required' }, { status: 400 });
+	}
+	if (!message || typeof message !== 'string') {
+		return json({ error: 'message is required' }, { status: 400 });
+	}
+	if (!topicContext?.title || !topicContext?.category) {
+		return json({ error: 'topicContext with title and category is required' }, { status: 400 });
+	}
 
 	// Save user message to notebook (local history)
 	addMessageToNotebook(topicId, {
@@ -27,6 +45,56 @@ ${message}`;
 
 	return handleNonStreamingResponse(topicId, contextMessage);
 };
+
+/**
+ * Parse JSON string with escape sequences properly.
+ * Handles \" \n \t \\ etc.
+ */
+function unescapeJsonString(str: string): string {
+	return str
+		.replace(/\\n/g, '\n')
+		.replace(/\\t/g, '\t')
+		.replace(/\\r/g, '\r')
+		.replace(/\\"/g, '"')
+		.replace(/\\\\/g, '\\');
+}
+
+/**
+ * Extract message content from partial JSON arguments.
+ * Handles escape sequences properly to avoid truncation.
+ */
+function extractMessageFromPartialJson(args: string): string | null {
+	// Look for "message": " pattern
+	const startPattern = /"message":\s*"/;
+	const startMatch = args.match(startPattern);
+	if (!startMatch || startMatch.index === undefined) {
+		return null;
+	}
+
+	// Find where the value starts
+	const valueStart = startMatch.index + startMatch[0].length;
+
+	// Extract the value, handling escape sequences
+	let value = '';
+	let i = valueStart;
+	while (i < args.length) {
+		const char = args[i];
+		if (char === '\\' && i + 1 < args.length) {
+			// Escape sequence - include both chars for now
+			value += args[i] + args[i + 1];
+			i += 2;
+		} else if (char === '"') {
+			// End of string value
+			break;
+		} else {
+			value += char;
+			i++;
+		}
+	}
+
+	// Unescape the value
+	return unescapeJsonString(value);
+}
 
 async function handleStreamingResponse(topicId: string, message: string): Promise<Response> {
 	const readableStream = new ReadableStream<Uint8Array>({
@@ -66,6 +134,7 @@ async function handleStreamingResponse(topicId: string, message: string): Promis
 				const decoder = new TextDecoder();
 				let buffer = '';
 				let fullResponse = '';
+				let lastSentLength = 0;
 
 				while (true) {
 					const { done, value } = await reader.read();
@@ -88,31 +157,26 @@ async function handleStreamingResponse(topicId: string, message: string): Promis
 								const toolCall = event.tool_call;
 								if (toolCall?.name === 'send_message' && toolCall.arguments) {
 									// send_message contains the actual response text
-									// Arguments come in chunks, try to extract message
+									let extractedMessage: string | null = null;
+
 									try {
-										// Try to parse complete JSON
+										// Try to parse complete JSON first
 										const args = JSON.parse(toolCall.arguments);
 										if (args.message) {
-											const text = args.message;
-											if (!fullResponse.endsWith(text)) {
-												// Avoid duplicates - only send new content
-												const newText = text.slice(fullResponse.length);
-												if (newText) {
-													fullResponse = text;
-													sendEvent('text', { text: newText });
-												}
-											}
+											extractedMessage = args.message;
 										}
 									} catch {
-										// Partial JSON - extract message content if possible
-										const match = toolCall.arguments.match(/"message":\s*"([^"]*)/);
-										if (match && match[1]) {
-											const partialText = match[1];
-											if (partialText.length > fullResponse.length) {
-												const newText = partialText.slice(fullResponse.length);
-												fullResponse = partialText;
-												sendEvent('text', { text: newText });
-											}
+										// Partial JSON - use custom parser that handles escapes
+										extractedMessage = extractMessageFromPartialJson(toolCall.arguments);
+									}
+
+									if (extractedMessage && extractedMessage.length > lastSentLength) {
+										// Send only the new content
+										const newText = extractedMessage.slice(lastSentLength);
+										if (newText) {
+											fullResponse = extractedMessage;
+											lastSentLength = extractedMessage.length;
+											sendEvent('text', { text: newText });
 										}
 									}
 								} else if (toolCall?.name) {
@@ -136,9 +200,42 @@ async function handleStreamingResponse(topicId: string, message: string): Promis
 							} else if (event.message_type === 'assistant_message') {
 								// Direct assistant message (older Letta format)
 								const text = event.content || '';
-								if (text && !fullResponse.includes(text)) {
-									fullResponse += text;
-									sendEvent('text', { text });
+								if (text && text.length > lastSentLength) {
+									const newText = text.slice(lastSentLength);
+									fullResponse = text;
+									lastSentLength = text.length;
+									sendEvent('text', { text: newText });
+								}
+							}
+						} catch {
+							// Skip invalid JSON
+						}
+					}
+				}
+
+				// Process any remaining buffer
+				if (buffer.trim() && buffer.startsWith('data: ')) {
+					const data = buffer.slice(6);
+					if (data !== '[DONE]') {
+						try {
+							const event = JSON.parse(data);
+							if (event.message_type === 'tool_call_message') {
+								const toolCall = event.tool_call;
+								if (toolCall?.name === 'send_message' && toolCall.arguments) {
+									try {
+										const args = JSON.parse(toolCall.arguments);
+										if (args.message && args.message.length > lastSentLength) {
+											const newText = args.message.slice(lastSentLength);
+											fullResponse = args.message;
+											sendEvent('text', { text: newText });
+										}
+									} catch {
+										const extracted = extractMessageFromPartialJson(toolCall.arguments);
+										if (extracted && extracted.length > lastSentLength) {
+											fullResponse = extracted;
+											sendEvent('text', { text: extracted.slice(lastSentLength) });
+										}
+									}
 								}
 							}
 						} catch {
@@ -206,9 +303,9 @@ async function handleNonStreamingResponse(topicId: string, message: string): Pro
 							fullResponse += args.message;
 						}
 					} catch {
-						// Try to extract from partial
-						const match = toolCall.arguments.match(/"message":\s*"([^"]*)"/);
-						if (match) fullResponse += match[1];
+						// Try to extract from partial using proper parser
+						const extracted = extractMessageFromPartialJson(toolCall.arguments);
+						if (extracted) fullResponse += extracted;
 					}
 				}
 			} else if (msg.message_type === 'assistant_message' && msg.content) {
