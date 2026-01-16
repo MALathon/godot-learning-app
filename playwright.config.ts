@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
 	testDir: './e2e',
+	globalSetup: './e2e/global-setup.ts',
 	fullyParallel: false, // Run tests sequentially to avoid Letta server conflicts
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
@@ -22,10 +23,20 @@ export default defineConfig({
 		}
 	],
 
-	webServer: {
-		command: 'npm run dev -- --port 5180',
-		url: 'http://localhost:5180',
-		reuseExistingServer: true,
-		timeout: 120000
-	}
+	webServer: [
+		{
+			// Letta AI server - must start first
+			command: 'letta server',
+			url: 'http://localhost:8283/v1/health',
+			reuseExistingServer: !process.env.CI,
+			timeout: 60000
+		},
+		{
+			// SvelteKit dev server
+			command: 'npm run dev -- --port 5180',
+			url: 'http://localhost:5180',
+			reuseExistingServer: !process.env.CI,
+			timeout: 120000
+		}
+	]
 });

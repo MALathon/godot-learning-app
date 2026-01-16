@@ -6,18 +6,17 @@ End-to-end tests using Playwright for the Godot Learning App.
 
 Before running E2E tests, ensure:
 
-1. **Letta Server** is running on `http://localhost:8283`
-   ```bash
-   # Start Letta server
-   letta server
-   ```
-
-2. **Agents are set up**
+1. **Agents are set up** (one-time setup):
    ```bash
    cd letta && python setup_agents.py
    ```
 
-3. **Dev server** will be started automatically by Playwright
+2. **Letta Server** and **Dev server** are started automatically by Playwright
+
+The test runner will:
+- Start the Letta server on `http://localhost:8283`
+- Start the SvelteKit dev server on `http://localhost:5180`
+- Verify agent configuration before tests run
 
 ## Running Tests
 
