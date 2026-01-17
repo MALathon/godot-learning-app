@@ -60,7 +60,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-	<div class="modal-backdrop" onclick={() => open = false} onkeydown={(e) => e.key === 'Enter' && (open = false)} role="button" tabindex="0">
+	<div class="modal-backdrop" onclick={() => open = false} onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && (open = false)} role="button" tabindex="0">
 		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
 			<header class="modal-header">
 				<h2>Settings</h2>

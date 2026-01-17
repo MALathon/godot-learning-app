@@ -13,7 +13,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	let body;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (parseError) {
+		console.error('Failed to parse journal POST body:', parseError instanceof Error ? parseError.message : parseError);
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
@@ -36,7 +37,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 	let body;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (parseError) {
+		console.error('Failed to parse journal PATCH body:', parseError instanceof Error ? parseError.message : parseError);
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
@@ -46,11 +48,11 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		return json({ error: 'id is required' }, { status: 400 });
 	}
 
-	if (!content || typeof content !== 'string') {
+	if (!content || typeof content !== 'string' || !content.trim()) {
 		return json({ error: 'content is required' }, { status: 400 });
 	}
 
-	const entry = updateJournalEntry(id, content);
+	const entry = updateJournalEntry(id, content.trim());
 	if (!entry) {
 		return json({ error: 'Entry not found' }, { status: 404 });
 	}
@@ -63,7 +65,8 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	let body;
 	try {
 		body = await request.json();
-	} catch {
+	} catch (parseError) {
+		console.error('Failed to parse journal DELETE body:', parseError instanceof Error ? parseError.message : parseError);
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 

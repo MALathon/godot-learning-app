@@ -62,15 +62,16 @@
 	const lastVisited = $derived(progress?.lastVisited ?? null);
 
 	onMount(async () => {
-		await loadNotebook();
+		// Only load notebook for topic-specific contexts
 		if (hasTopicContext) {
+			await loadNotebook();
 			await checkNewContent();
 		}
 	});
 
-	// Reload notebook when topic changes
+	// Reload notebook when topic changes (only for topic contexts)
 	$effect(() => {
-		if (contextId) {
+		if (hasTopicContext && contextId) {
 			loadNotebook().catch(e => {
 				console.error('Failed to load notebook:', e);
 			});

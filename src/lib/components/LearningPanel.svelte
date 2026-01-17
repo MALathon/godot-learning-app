@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import ChatSection from './ChatSection.svelte';
 	import NotesSection from './NotesSection.svelte';
 	import type { Topic } from '$lib/data/topics';
@@ -52,6 +53,14 @@
 		document.removeEventListener('mousemove', handleDrag);
 		document.removeEventListener('mouseup', handleDragEnd);
 	}
+
+	// Cleanup event listeners if component unmounts during drag
+	onDestroy(() => {
+		if (isDragging) {
+			document.removeEventListener('mousemove', handleDrag);
+			document.removeEventListener('mouseup', handleDragEnd);
+		}
+	});
 </script>
 
 <aside class="learning-panel" class:collapsed bind:this={panelRef}>
