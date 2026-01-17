@@ -12,10 +12,11 @@ Prerequisites:
 - pip install letta-client requests
 - Set ANTHROPIC_API_KEY environment variable
 - Start local Letta server: letta server
-- Your learning app running on localhost:5999
+- Your learning app running (set LEARNING_APP_URL env var)
 """
 
 import os
+import sys
 import json
 import inspect
 import requests
@@ -23,7 +24,17 @@ from letta_client import Letta
 
 # Configuration
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-LEARNING_APP_URL = os.getenv("LEARNING_APP_URL", "http://localhost:5999")
+LEARNING_APP_URL = os.getenv("LEARNING_APP_URL")
+
+if not LEARNING_APP_URL:
+	# Check for command line arg
+	if len(sys.argv) > 1:
+		LEARNING_APP_URL = sys.argv[1]
+	else:
+		print("Error: LEARNING_APP_URL not set.")
+		print("Usage: LEARNING_APP_URL=http://localhost:5173 python setup_agents.py")
+		print("   or: python setup_agents.py http://localhost:5173")
+		sys.exit(1)
 
 # Initialize Letta client for LOCAL server (no api_key needed)
 client = Letta(base_url=LETTA_BASE_URL)
@@ -662,7 +673,7 @@ def main():
             print(f"Learning app returned {response.status_code}")
     except Exception as e:
         print(f"Cannot reach learning app: {e}")
-        print("  Make sure your app is running on port 5999")
+        print(f"  Make sure your app is running at {LEARNING_APP_URL}")
         print("  Continuing anyway - tools will work once app is running...")
 
     # Create agents

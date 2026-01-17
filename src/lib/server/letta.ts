@@ -8,7 +8,11 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 export const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
-export const INTERNAL_URL = env.INTERNAL_URL ?? 'http://localhost:5999';
+// INTERNAL_URL must be set via environment variable - no hardcoded port
+export const INTERNAL_URL = env.INTERNAL_URL ?? (() => {
+	console.warn('INTERNAL_URL not set. Set it to your dev server URL (e.g., http://localhost:5173)');
+	return 'http://localhost:5173';
+})();
 
 /**
  * Validate that a URL is safe for internal requests (SSRF protection).
