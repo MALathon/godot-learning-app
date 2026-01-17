@@ -8,6 +8,15 @@ const PROGRESS_FILE = join(DATA_DIR, 'progress.json');
 const EXTENSIONS_DIR = join(DATA_DIR, 'extensions');
 const LESSONS_DIR = join(DATA_DIR, 'lessons');
 
+/**
+ * Sanitize topic ID to prevent path traversal attacks.
+ * Only allows alphanumeric characters, hyphens, and underscores.
+ */
+function sanitizeTopicId(topicId: string): string {
+	// Remove any path traversal attempts and invalid characters
+	return topicId.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 // Ensure data directories exist
 function ensureDataDirs() {
 	if (!existsSync(DATA_DIR)) {
@@ -53,7 +62,12 @@ export function saveSettings(settings: Partial<Settings>): Settings {
 	ensureDataDirs();
 	const current = getSettings();
 	const updated = { ...current, ...settings };
-	writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2));
+	try {
+		writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2));
+	} catch (error) {
+		console.error(`Failed to save settings: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
 	return updated;
 }
 
@@ -73,7 +87,8 @@ export interface Notebook {
 
 export function getNotebook(topicId: string): Notebook {
 	ensureDataDirs();
-	const filePath = join(NOTEBOOKS_DIR, `${topicId}.json`);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const filePath = join(NOTEBOOKS_DIR, `${safeTopicId}.json`);
 	if (!existsSync(filePath)) {
 		return {
 			topicId,
@@ -99,8 +114,14 @@ export function getNotebook(topicId: string): Notebook {
 export function saveNotebook(notebook: Notebook): void {
 	ensureDataDirs();
 	notebook.updatedAt = new Date().toISOString();
-	const filePath = join(NOTEBOOKS_DIR, `${notebook.topicId}.json`);
-	writeFileSync(filePath, JSON.stringify(notebook, null, 2));
+	const safeTopicId = sanitizeTopicId(notebook.topicId);
+	const filePath = join(NOTEBOOKS_DIR, `${safeTopicId}.json`);
+	try {
+		writeFileSync(filePath, JSON.stringify(notebook, null, 2));
+	} catch (error) {
+		console.error(`Failed to save notebook for topic ${safeTopicId}: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
 }
 
 export function addMessageToNotebook(topicId: string, message: ChatMessage): Notebook {
@@ -149,7 +170,12 @@ export function getProgress(): Progress {
 
 export function saveProgress(progress: Progress): void {
 	ensureDataDirs();
-	writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+	try {
+		writeFileSync(PROGRESS_FILE, JSON.stringify(progress, null, 2));
+	} catch (error) {
+		console.error(`Failed to save progress: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
 }
 
 export function updateTopicProgress(topicId: string, update: Partial<TopicProgress>): Progress {
@@ -206,7 +232,8 @@ export interface TopicExtension {
 
 export function getTopicExtension(topicId: string): TopicExtension {
 	ensureDataDirs();
-	const filePath = join(EXTENSIONS_DIR, `${topicId}.json`);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const filePath = join(EXTENSIONS_DIR, `${safeTopicId}.json`);
 	if (!existsSync(filePath)) {
 		return {
 			topicId,
@@ -229,8 +256,14 @@ export function getTopicExtension(topicId: string): TopicExtension {
 
 export function saveTopicExtension(extension: TopicExtension): void {
 	ensureDataDirs();
-	const filePath = join(EXTENSIONS_DIR, `${extension.topicId}.json`);
-	writeFileSync(filePath, JSON.stringify(extension, null, 2));
+	const safeTopicId = sanitizeTopicId(extension.topicId);
+	const filePath = join(EXTENSIONS_DIR, `${safeTopicId}.json`);
+	try {
+		writeFileSync(filePath, JSON.stringify(extension, null, 2));
+	} catch (error) {
+		console.error(`Failed to save topic extension for ${safeTopicId}: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
 }
 
 export function addResourceToTopic(
@@ -304,7 +337,8 @@ export interface Lesson {
 
 function ensureTopicLessonsDir(topicId: string): string {
 	ensureDataDirs();
-	const topicDir = join(LESSONS_DIR, topicId);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const topicDir = join(LESSONS_DIR, safeTopicId);
 	if (!existsSync(topicDir)) {
 		mkdirSync(topicDir, { recursive: true });
 	}
@@ -334,13 +368,20 @@ export function addLesson(
 	};
 
 	const filePath = join(topicDir, `${id}.json`);
-	writeFileSync(filePath, JSON.stringify(fullLesson, null, 2));
+	try {
+		writeFileSync(filePath, JSON.stringify(fullLesson, null, 2));
+	} catch (error) {
+		console.error(`Failed to save lesson ${id}: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
 	return fullLesson;
 }
 
 export function getLesson(topicId: string, lessonId: string): Lesson | null {
 	ensureDataDirs();
-	const filePath = join(LESSONS_DIR, topicId, `${lessonId}.json`);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const safeLessonId = sanitizeTopicId(lessonId);
+	const filePath = join(LESSONS_DIR, safeTopicId, `${safeLessonId}.json`);
 	if (!existsSync(filePath)) {
 		return null;
 	}
@@ -355,7 +396,8 @@ export function getLesson(topicId: string, lessonId: string): Lesson | null {
 
 export function getLessonsForTopic(topicId: string): Lesson[] {
 	ensureDataDirs();
-	const topicDir = join(LESSONS_DIR, topicId);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const topicDir = join(LESSONS_DIR, safeTopicId);
 	if (!existsSync(topicDir)) {
 		return [];
 	}
@@ -411,7 +453,9 @@ export function getAllLessons(): Record<string, Lesson[]> {
 }
 
 export function deleteLesson(topicId: string, lessonId: string): boolean {
-	const filePath = join(LESSONS_DIR, topicId, `${lessonId}.json`);
+	const safeTopicId = sanitizeTopicId(topicId);
+	const safeLessonId = sanitizeTopicId(lessonId);
+	const filePath = join(LESSONS_DIR, safeTopicId, `${safeLessonId}.json`);
 	if (existsSync(filePath)) {
 		unlinkSync(filePath);
 		return true;
@@ -462,7 +506,12 @@ export function logAgentActivity(activity: Omit<AgentActivity, 'id' | 'timestamp
 		activities = activities.slice(0, MAX_ACTIVITY_ENTRIES);
 	}
 
-	writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(activities, null, 2));
+	try {
+		writeFileSync(ACTIVITY_LOG_FILE, JSON.stringify(activities, null, 2));
+	} catch (error) {
+		console.error(`Failed to save agent activity log: ${error instanceof Error ? error.message : error}`);
+		// Don't throw - activity logging is non-critical
+	}
 	return fullActivity;
 }
 
@@ -482,6 +531,10 @@ export function getRecentAgentActivity(limit: number = 20): AgentActivity[] {
 }
 
 export function getAgentActivityForTopic(topicId: string, limit: number = 10): AgentActivity[] {
+	const safeTopicId = sanitizeTopicId(topicId);
 	const all = getRecentAgentActivity(MAX_ACTIVITY_ENTRIES);
-	return all.filter(a => a.topicId === topicId).slice(0, limit);
+	return all.filter(a => a.topicId === safeTopicId).slice(0, limit);
 }
+
+// Export sanitizeTopicId for use in API routes
+export { sanitizeTopicId };

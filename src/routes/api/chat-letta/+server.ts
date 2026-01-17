@@ -1,23 +1,17 @@
 import { json } from '@sveltejs/kit';
 import { getNotebook, addMessageToNotebook, logAgentActivity } from '$lib/server/storage';
-import { LETTA_URL, INTERNAL_URL, getGideonAgentId } from '$lib/server/letta';
+import { LETTA_URL, getGideonAgentId, triggerBackgroundCuration } from '$lib/server/letta';
 import type { RequestHandler } from './$types';
 
-// Trigger background curation after a conversation
-function triggerPostConversationCuration(topicId: string): void {
-	// Fire and forget - but log failures for observability
-	fetch(`${INTERNAL_URL}/api/letta/curate`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			mode: 'topic',
-			topicId,
-			background: true,
-			trigger: 'post_conversation'
-		})
-	}).catch((error) => {
-		console.error(`Background curation failed for topic ${topicId}:`, error.message);
-	});
+/**
+ * Type for tool call arguments parsed from JSON.
+ */
+interface ToolArgs {
+	message?: string;
+	title?: string;
+	query?: string;
+	topic_id?: string;
+	[key: string]: unknown;
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -245,8 +239,8 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 										if (args.message) {
 											extractedMessage = args.message;
 										}
-									} catch {
-										// Partial JSON - use custom parser that handles escapes
+									} catch (parseError) {
+										// Partial JSON during streaming - expected, use custom parser
 										extractedMessage = extractMessageFromPartialJson(toolCall.arguments);
 									}
 
@@ -261,15 +255,16 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 									}
 								} else if (toolCall?.name) {
 									// Other tool calls - parse arguments for context
-									let toolArgs: Record<string, unknown> = {};
+									let toolArgs: ToolArgs = {};
 									try {
 										if (toolCall.arguments) {
 											toolArgs = typeof toolCall.arguments === 'string'
 												? JSON.parse(toolCall.arguments)
 												: toolCall.arguments;
 										}
-									} catch {
-										// Arguments not valid JSON yet
+									} catch (parseError) {
+										// Arguments not valid JSON yet - expected during streaming
+										console.debug(`Tool args parse incomplete for ${toolCall.name}: partial JSON`);
 									}
 
 									// Log agent activity for non-send_message tools
@@ -303,8 +298,8 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 											: event.tool_return;
 										if (parsed.title) title = parsed.title;
 										if (parsed.message) enhancedResult = parsed.message;
-									} catch {
-										// Not JSON, use as-is
+									} catch (parseError) {
+										// Tool return is plain text, not JSON - expected behavior
 									}
 
 									sendEvent('tool', {
@@ -331,8 +326,9 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 									sendEvent('text', { text: newText });
 								}
 							}
-						} catch {
-							// Skip invalid JSON
+						} catch (parseError) {
+							// Skip malformed JSON in stream - can happen with partial chunks
+							console.debug('Skipping malformed JSON in stream');
 						}
 					}
 				}
@@ -353,7 +349,8 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 											fullResponse = args.message;
 											sendEvent('text', { text: newText });
 										}
-									} catch {
+									} catch (parseError) {
+										// Partial JSON at end of buffer - use custom parser
 										const extracted = extractMessageFromPartialJson(toolCall.arguments);
 										if (extracted && extracted.length > lastSentLength) {
 											fullResponse = extracted;
@@ -362,8 +359,9 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 									}
 								}
 							}
-						} catch {
-							// Skip invalid JSON
+						} catch (parseError) {
+							// Buffer contained incomplete JSON - normal at stream end
+							console.debug('Buffer parse failed, likely incomplete data');
 						}
 					}
 				}
@@ -377,7 +375,7 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 					});
 
 					// Trigger background curation after conversation
-					triggerPostConversationCuration(topicId);
+					triggerBackgroundCuration(topicId, 'post_conversation');
 				}
 
 				sendEvent('done', { notebook: getNotebook(topicId) });
@@ -429,8 +427,8 @@ async function handleNonStreamingResponse(topicId: string, message: string, agen
 						if (args.message) {
 							fullResponse += args.message;
 						}
-					} catch {
-						// Try to extract from partial using proper parser
+					} catch (parseError) {
+						// JSON parse failed, try custom partial parser
 						const extracted = extractMessageFromPartialJson(toolCall.arguments);
 						if (extracted) fullResponse += extracted;
 					}

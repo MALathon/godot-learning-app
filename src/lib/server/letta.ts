@@ -10,6 +10,25 @@ import { join } from 'path';
 export const LETTA_URL = env.LETTA_URL ?? 'http://localhost:8283';
 export const INTERNAL_URL = env.INTERNAL_URL ?? 'http://localhost:5999';
 
+/**
+ * Validate that a URL is safe for internal requests (SSRF protection).
+ * Only allows localhost and 127.0.0.1 for internal URLs.
+ */
+export function isValidInternalUrl(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		const allowedHosts = ['localhost', '127.0.0.1'];
+		return allowedHosts.includes(parsed.hostname);
+	} catch {
+		return false;
+	}
+}
+
+// Validate INTERNAL_URL at module load time
+if (!isValidInternalUrl(INTERNAL_URL)) {
+	console.warn(`INTERNAL_URL "${INTERNAL_URL}" is not a valid localhost URL. This may pose a security risk.`);
+}
+
 export interface AgentIds {
 	gideon?: string;
 	curator?: string;
@@ -82,8 +101,42 @@ export function getCuratorAgentId(): string | null {
 export async function isLettaAvailable(): Promise<boolean> {
 	try {
 		const response = await fetch(`${LETTA_URL}/v1/health`, { method: 'GET' });
+		if (!response.ok) {
+			console.debug(`Letta health check failed with status ${response.status}`);
+		}
 		return response.ok;
-	} catch {
+	} catch (error) {
+		console.debug(`Letta health check error: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		return false;
 	}
+}
+
+/**
+ * Trigger background curation for a topic (fire-and-forget with error logging).
+ * Shared utility for topic visits and post-conversation curation.
+ */
+export function triggerBackgroundCuration(topicId: string, trigger: string = 'topic_visit'): void {
+	if (!isValidInternalUrl(INTERNAL_URL)) {
+		console.error(`Cannot trigger curation: INTERNAL_URL "${INTERNAL_URL}" is not a valid localhost URL`);
+		return;
+	}
+
+	fetch(`${INTERNAL_URL}/api/letta/curate`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			mode: 'topic',
+			topicId,
+			background: true,
+			trigger
+		})
+	})
+		.then((response) => {
+			if (!response.ok) {
+				console.error(`Background curation failed for topic ${topicId}: HTTP ${response.status}`);
+			}
+		})
+		.catch((error) => {
+			console.error(`Background curation trigger failed for topic ${topicId}:`, error.message);
+		});
 }

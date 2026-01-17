@@ -41,7 +41,7 @@
 	let error = $state<string | null>(null);
 	let lettaAvailable = $state(true);
 	let messagesContainer: HTMLElement | null = $state(null);
-	let abortController: AbortController | null = $state(null);
+	let abortController: AbortController | null = null;
 
 	// Enhanced state
 	let showThinking = $state(true);
@@ -351,6 +351,13 @@
 		}
 	}
 
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && expanded) {
+			e.preventDefault();
+			expanded = false;
+		}
+	}
+
 	function escapeHtml(text: string): string {
 		return text
 			.replace(/&/g, '&amp;')
@@ -401,7 +408,7 @@
 	};
 </script>
 
-<svelte:window onclick={handleClickOutside} />
+<svelte:window onclick={handleClickOutside} onkeydown={handleGlobalKeydown} />
 
 <!-- Collapsed: Minimal bubble with notification badge -->
 {#if !expanded}

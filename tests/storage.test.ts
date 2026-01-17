@@ -2,13 +2,21 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-// Test data directory
+// Mock process.cwd to use test directory
 const TEST_DATA_DIR = join(process.cwd(), 'data-test');
-const TEST_EXTENSIONS_DIR = join(TEST_DATA_DIR, 'extensions');
-const TEST_NOTEBOOKS_DIR = join(TEST_DATA_DIR, 'notebooks');
-const TEST_ACTIVITY_FILE = join(TEST_DATA_DIR, 'agent_activity.json');
 
-describe('Extension Storage', () => {
+// We need to mock the storage module's DATA_DIR before importing
+vi.mock('$lib/server/storage', async () => {
+	const actual = await vi.importActual('$lib/server/storage');
+	return {
+		...actual,
+		// The module uses process.cwd() internally, so we test the logic patterns
+	};
+});
+
+describe('Extension Storage Patterns', () => {
+	const TEST_EXTENSIONS_DIR = join(TEST_DATA_DIR, 'extensions');
+
 	beforeEach(() => {
 		mkdirSync(TEST_EXTENSIONS_DIR, { recursive: true });
 	});
@@ -30,6 +38,10 @@ describe('Extension Storage', () => {
 		writeFileSync(filePath, JSON.stringify(extension, null, 2));
 
 		expect(existsSync(filePath)).toBe(true);
+
+		// Verify content
+		const saved = JSON.parse(readFileSync(filePath, 'utf-8'));
+		expect(saved.topicId).toBe('game-loop');
 	});
 
 	it('should add resource to extension', () => {
@@ -49,6 +61,7 @@ describe('Extension Storage', () => {
 
 		expect(extension.resources.length).toBe(1);
 		expect(extension.resources[0].addedBy).toBe('ai');
+		expect(extension.resources[0].url).toBe('https://docs.godotengine.org');
 	});
 
 	it('should add code example to extension', () => {
@@ -69,6 +82,7 @@ describe('Extension Storage', () => {
 
 		expect(extension.codeExamples.length).toBe(1);
 		expect(extension.codeExamples[0].language).toBe('gdscript');
+		expect(extension.codeExamples[0].code).toContain('_process');
 	});
 
 	it('should merge extensions without duplicates', () => {
@@ -85,10 +99,17 @@ describe('Extension Storage', () => {
 
 		existingResources.push(newResource);
 		expect(existingResources.length).toBe(3);
+
+		// Attempt to add duplicate
+		const duplicateResource = { title: 'Resource 1 Copy', url: 'https://example.com/1' };
+		const isDuplicate2 = existingResources.some((r) => r.url === duplicateResource.url);
+		expect(isDuplicate2).toBe(true);
 	});
 });
 
-describe('Notebook Storage', () => {
+describe('Notebook Storage Patterns', () => {
+	const TEST_NOTEBOOKS_DIR = join(TEST_DATA_DIR, 'notebooks');
+
 	beforeEach(() => {
 		mkdirSync(TEST_NOTEBOOKS_DIR, { recursive: true });
 	});
@@ -111,6 +132,11 @@ describe('Notebook Storage', () => {
 		writeFileSync(filePath, JSON.stringify(notebook, null, 2));
 
 		expect(existsSync(filePath)).toBe(true);
+
+		// Verify content
+		const saved = JSON.parse(readFileSync(filePath, 'utf-8'));
+		expect(saved.topicId).toBe('game-loop');
+		expect(saved.messages).toEqual([]);
 	});
 
 	it('should add message to notebook', () => {
@@ -147,13 +173,35 @@ describe('Notebook Storage', () => {
 			updatedAt: originalTime
 		};
 
+		// Simulate update
 		notebook.updatedAt = new Date().toISOString();
 
 		expect(notebook.updatedAt).not.toBe(originalTime);
+		expect(new Date(notebook.updatedAt).getTime()).toBeGreaterThan(new Date(originalTime).getTime());
+	});
+
+	it('should persist notebook to file and read back', () => {
+		const notebook = {
+			topicId: 'signals',
+			messages: [
+				{ role: 'user', content: 'What are signals?', timestamp: new Date().toISOString() },
+				{ role: 'assistant', content: 'Signals are...', timestamp: new Date().toISOString() }
+			],
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString()
+		};
+
+		const filePath = join(TEST_NOTEBOOKS_DIR, 'signals.json');
+		writeFileSync(filePath, JSON.stringify(notebook, null, 2));
+
+		const loaded = JSON.parse(readFileSync(filePath, 'utf-8'));
+		expect(loaded.topicId).toBe('signals');
+		expect(loaded.messages.length).toBe(2);
+		expect(loaded.messages[0].content).toBe('What are signals?');
 	});
 });
 
-describe('Agent Activity Logging', () => {
+describe('Agent Activity Logging Patterns', () => {
 	beforeEach(() => {
 		mkdirSync(TEST_DATA_DIR, { recursive: true });
 	});
@@ -164,8 +212,9 @@ describe('Agent Activity Logging', () => {
 		}
 	});
 
-	it('should log agent activity', () => {
+	it('should log agent activity with required fields', () => {
 		const activities: Array<{
+			id: string;
 			type: string;
 			details: string;
 			topicId?: string;
@@ -174,6 +223,7 @@ describe('Agent Activity Logging', () => {
 		}> = [];
 
 		const activity = {
+			id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
 			type: 'search',
 			details: 'Searched for delta time resources',
 			topicId: 'game-loop',
@@ -186,6 +236,7 @@ describe('Agent Activity Logging', () => {
 		expect(activities.length).toBe(1);
 		expect(activities[0].type).toBe('search');
 		expect(activities[0].agentName).toBe('curator');
+		expect(activities[0].id).toMatch(/^act-/);
 	});
 
 	it('should support different activity types', () => {
@@ -243,9 +294,22 @@ describe('Agent Activity Logging', () => {
 
 		expect(gideonActivities.length).toBe(2);
 	});
+
+	it('should persist activity log to file', () => {
+		const activities = [
+			{ id: 'act-1', type: 'search', details: 'Searched', agentName: 'gideon', timestamp: new Date().toISOString() }
+		];
+
+		const filePath = join(TEST_DATA_DIR, 'agent_activity.json');
+		writeFileSync(filePath, JSON.stringify(activities, null, 2));
+
+		const loaded = JSON.parse(readFileSync(filePath, 'utf-8'));
+		expect(loaded.length).toBe(1);
+		expect(loaded[0].type).toBe('search');
+	});
 });
 
-describe('Progress Storage', () => {
+describe('Progress Storage Patterns', () => {
 	it('should track topic completion', () => {
 		const progress = {
 			topics: {} as Record<
@@ -304,5 +368,52 @@ describe('Progress Storage', () => {
 		progress.topics['game-loop'].lastVisited = new Date().toISOString();
 
 		expect(progress.topics['game-loop'].lastVisited).not.toBeNull();
+	});
+
+	it('should track multiple topics independently', () => {
+		const progress = {
+			topics: {
+				'game-loop': { completed: true, exercisesCompleted: ['ex1'], lastVisited: '2026-01-15T10:00:00Z', notes: '' },
+				'signals': { completed: false, exercisesCompleted: [], lastVisited: '2026-01-16T10:00:00Z', notes: 'WIP' },
+				'scene-tree': { completed: false, exercisesCompleted: [], lastVisited: null, notes: '' }
+			}
+		};
+
+		const completedTopics = Object.entries(progress.topics).filter(([, p]) => p.completed);
+		expect(completedTopics.length).toBe(1);
+		expect(completedTopics[0][0]).toBe('game-loop');
+
+		const visitedTopics = Object.entries(progress.topics).filter(([, p]) => p.lastVisited !== null);
+		expect(visitedTopics.length).toBe(2);
+	});
+});
+
+describe('Topic ID Sanitization', () => {
+	// This tests the sanitization logic that protects against path traversal
+	function sanitizeTopicId(topicId: string): string {
+		return topicId.replace(/[^a-zA-Z0-9_-]/g, '');
+	}
+
+	it('should allow valid topic IDs', () => {
+		expect(sanitizeTopicId('game-loop')).toBe('game-loop');
+		expect(sanitizeTopicId('scene_tree')).toBe('scene_tree');
+		expect(sanitizeTopicId('topic123')).toBe('topic123');
+	});
+
+	it('should remove path traversal attempts', () => {
+		expect(sanitizeTopicId('../etc/passwd')).toBe('etcpasswd');
+		expect(sanitizeTopicId('../../secrets')).toBe('secrets');
+		expect(sanitizeTopicId('topic/../other')).toBe('topicother');
+	});
+
+	it('should remove special characters', () => {
+		expect(sanitizeTopicId('topic<script>')).toBe('topicscript');
+		expect(sanitizeTopicId('topic;rm -rf')).toBe('topicrm-rf'); // Hyphens are allowed
+		expect(sanitizeTopicId('topic$(cmd)')).toBe('topiccmd');
+	});
+
+	it('should handle empty strings', () => {
+		expect(sanitizeTopicId('')).toBe('');
+		expect(sanitizeTopicId('...')).toBe('');
 	});
 });

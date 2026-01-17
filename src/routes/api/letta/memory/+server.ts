@@ -87,6 +87,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ error: 'value is required and must be a string' }, { status: 400 });
 	}
 
+	// Length validation to prevent excessively large memory updates
+	const MAX_VALUE_LENGTH = 50000; // 50KB max
+	if (value.length > MAX_VALUE_LENGTH) {
+		return json({
+			error: `value exceeds maximum length of ${MAX_VALUE_LENGTH} characters`,
+			actualLength: value.length
+		}, { status: 400 });
+	}
+
 	const agentIds = getAgentIds();
 	const agentId = agent === 'curator' ? agentIds.curator : agentIds.gideon;
 

@@ -138,9 +138,19 @@
 		}
 	}
 
+	function escapeHtml(text: string): string {
+		return text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
+	}
+
 	function formatMessage(content: string): string {
-		// Basic markdown-like formatting
-		return content
+		// Escape HTML first to prevent XSS, then apply markdown-like formatting
+		const escaped = escapeHtml(content);
+		return escaped
 			.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
 			.replace(/`([^`]+)`/g, '<code>$1</code>')
 			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')

@@ -29,11 +29,12 @@ No content has been curated yet.
 
 // POST - Reset agent memory
 export const POST: RequestHandler = async ({ request }) => {
-	let body;
+	let body: { agent?: string; blocks?: string | string[] } = {};
 	try {
 		body = await request.json();
-	} catch {
-		body = {};
+	} catch (parseError) {
+		// No body or invalid JSON - use defaults
+		console.debug('Reset endpoint called with no/invalid body, using defaults');
 	}
 
 	const { agent = 'all', blocks = 'all' } = body;
@@ -95,11 +96,13 @@ export const POST: RequestHandler = async ({ request }) => {
 					} else {
 						results.push({ agent: agentInfo.name, block: block.label, status: 'failed' });
 					}
-				} catch {
+				} catch (updateError) {
+					console.error(`Failed to update block ${block.label} for agent ${agentInfo.name}:`, updateError);
 					results.push({ agent: agentInfo.name, block: block.label, status: 'error' });
 				}
 			}
-		} catch (error) {
+		} catch (agentError) {
+			console.error(`Failed to fetch agent ${agentInfo.name}:`, agentError);
 			results.push({ agent: agentInfo.name, block: '*', status: 'error' });
 		}
 	}
