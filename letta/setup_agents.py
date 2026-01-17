@@ -509,7 +509,13 @@ def create_agents():
 
     for func in ALL_TOOLS:
         try:
-            tool = client.tools.create(func=func)
+            # Get source code and dedent it
+            source = inspect.getsource(func)
+            lines = source.split('\n')
+            min_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+            source = '\n'.join(line[min_indent:] if line.strip() else '' for line in lines)
+
+            tool = client.tools.create(source_code=source)
             gideon_tools.append(tool.name)
             curator_tools.append(tool.name)
             print(f"  Created tool: {tool.name}")
@@ -603,7 +609,7 @@ def create_agents():
         f.write(gideon.id)
     print(f"Gideon ID saved to: {gideon_file}")
 
-    return gideon, curator
+    return gideon, curator, sleeptime_agent_id
 
 
 def test_agent(agent_id: str, name: str):
@@ -662,7 +668,7 @@ def main():
         print("  Continuing anyway - tools will work once app is running...")
 
     # Create agents
-    gideon, curator = create_agents()
+    gideon, curator, sleeptime_agent_id = create_agents()
 
     print("\n" + "=" * 60)
     print("Setup complete!")
