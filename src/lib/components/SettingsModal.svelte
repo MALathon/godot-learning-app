@@ -3,109 +3,50 @@
 
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
-	interface ModelOption {
-		id: string;
-		name: string;
-		createdAt: string;
-	}
-
-	let apiKey = $state('');
-	let hasApiKey = $state(false);
-	let apiKeyPreview = $state<string | null>(null);
-	let model = $state('claude-sonnet-4-20250514');
-	let saving = $state(false);
+	let lettaStatus = $state<'checking' | 'connected' | 'disconnected'>('checking');
+	let lettaUrl = $state('http://localhost:8283');
+	let agentInfo = $state<{ gideon: boolean; curator: boolean }>({ gideon: false, curator: false });
 	let message = $state<{ type: 'success' | 'error'; text: string } | null>(null);
-	let availableModels = $state<ModelOption[]>([]);
-	let loadingModels = $state(false);
-
-	// Fallback models if API call fails
-	const fallbackModels: ModelOption[] = [
-		{ id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', createdAt: '' },
-		{ id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', createdAt: '' },
-		{ id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', createdAt: '' }
-	];
 
 	onMount(async () => {
-		await loadSettings();
+		await checkLettaStatus();
 	});
 
-	async function loadModels() {
-		if (!hasApiKey) {
-			availableModels = fallbackModels;
-			return;
-		}
-
-		loadingModels = true;
+	async function checkLettaStatus() {
+		lettaStatus = 'checking';
 		try {
-			const response = await fetch('/api/models');
+			const response = await fetch('/api/letta/reset');
 			if (response.ok) {
 				const data = await response.json();
-				if (data.models && data.models.length > 0) {
-					availableModels = data.models;
-				} else {
-					availableModels = fallbackModels;
-				}
+				lettaStatus = data.available ? 'connected' : 'disconnected';
+				agentInfo = data.agents || { gideon: false, curator: false };
 			} else {
-				availableModels = fallbackModels;
+				lettaStatus = 'disconnected';
 			}
 		} catch (e) {
-			console.error('Failed to load models:', e);
-			availableModels = fallbackModels;
-		} finally {
-			loadingModels = false;
+			console.error('Failed to check Letta status:', e);
+			lettaStatus = 'disconnected';
 		}
 	}
 
-	async function loadSettings() {
-		try {
-			const response = await fetch('/api/settings');
-			if (response.ok) {
-				const data = await response.json();
-				hasApiKey = data.hasApiKey;
-				apiKeyPreview = data.apiKeyPreview;
-				model = data.model;
-			}
-		} catch (e) {
-			console.error('Failed to load settings:', e);
-		}
-		await loadModels();
-	}
-
-	async function saveSettings() {
-		saving = true;
+	async function resetAgentMemory() {
 		message = null;
-
 		try {
-			const body: Record<string, string> = { model };
-			if (apiKey.trim()) {
-				body.apiKey = apiKey.trim();
-			}
-
-			const response = await fetch('/api/settings', {
+			const response = await fetch('/api/letta/reset', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
+				body: JSON.stringify({ agent: 'all', blocks: 'all' })
 			});
 
 			if (response.ok) {
 				const data = await response.json();
-				hasApiKey = data.hasApiKey;
-				apiKeyPreview = data.apiKeyPreview;
-				apiKey = '';
-				message = { type: 'success', text: 'Settings saved!' };
-				// Reload models with new API key
-				await loadModels();
-				setTimeout(() => {
-					message = null;
-					open = false;
-				}, 1500);
+				message = { type: 'success', text: `Reset ${data.results?.filter((r: {status: string}) => r.status === 'reset').length || 0} memory blocks` };
+				setTimeout(() => message = null, 3000);
 			} else {
-				message = { type: 'error', text: 'Failed to save settings' };
+				message = { type: 'error', text: 'Failed to reset memory' };
 			}
 		} catch (e) {
-			message = { type: 'error', text: 'Failed to save settings' };
-		} finally {
-			saving = false;
+			message = { type: 'error', text: 'Failed to connect to Letta' };
 		}
 	}
 
@@ -119,10 +60,8 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={() => open = false}>
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="modal" onclick={(e) => e.stopPropagation()}>
+	<div class="modal-backdrop" onclick={() => open = false} onkeydown={(e) => e.key === 'Enter' && (open = false)} role="button" tabindex="0">
+		<div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
 			<header class="modal-header">
 				<h2>Settings</h2>
 				<button class="close-btn" onclick={() => open = false}>×</button>
@@ -130,41 +69,67 @@
 
 			<div class="modal-body">
 				<div class="field">
-					<label for="apiKey">Anthropic API Key</label>
-					{#if hasApiKey}
-						<div class="current-key">
-							<span class="key-preview">Current: {apiKeyPreview}</span>
-							<span class="key-status">✓ Configured</span>
-						</div>
-					{/if}
-					<input
-						id="apiKey"
-						type="password"
-						bind:value={apiKey}
-						placeholder={hasApiKey ? 'Enter new key to replace' : 'sk-ant-...'}
-					/>
+					<label>Letta AI Server</label>
+					<div class="status-row">
+						<span class="status-indicator" class:connected={lettaStatus === 'connected'} class:disconnected={lettaStatus === 'disconnected'} class:checking={lettaStatus === 'checking'}>
+							{#if lettaStatus === 'checking'}
+								⏳ Checking...
+							{:else if lettaStatus === 'connected'}
+								✓ Connected
+							{:else}
+								✗ Disconnected
+							{/if}
+						</span>
+						<button class="btn-small" onclick={checkLettaStatus}>Refresh</button>
+					</div>
 					<p class="field-hint">
-						Your API key is stored locally on this server in the <code>data/</code> directory.
+						Server URL: <code>{lettaUrl}</code>
 					</p>
 				</div>
 
-				<div class="field">
-					<label for="model">Model</label>
-					{#if loadingModels}
-						<select id="model" disabled>
-							<option>Loading models...</option>
-						</select>
-					{:else}
-						<select id="model" bind:value={model}>
-							{#each availableModels as modelOption}
-								<option value={modelOption.id}>{modelOption.name}</option>
-							{/each}
-						</select>
-					{/if}
-					{#if !hasApiKey}
-						<p class="field-hint">Add an API key to see all available models.</p>
-					{/if}
-				</div>
+				{#if lettaStatus === 'connected'}
+					<div class="field">
+						<label>AI Agents</label>
+						<div class="agents-list">
+							<div class="agent-item">
+								<span class="agent-status" class:active={agentInfo.gideon}>
+									{agentInfo.gideon ? '✓' : '✗'}
+								</span>
+								<span class="agent-name">Gideon</span>
+								<span class="agent-role">Tutor Agent</span>
+							</div>
+							<div class="agent-item">
+								<span class="agent-status" class:active={agentInfo.curator}>
+									{agentInfo.curator ? '✓' : '✗'}
+								</span>
+								<span class="agent-name">Curator</span>
+								<span class="agent-role">Content Agent</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="field">
+						<label>Memory Management</label>
+						<button class="btn-danger" onclick={resetAgentMemory}>
+							Reset Agent Memory
+						</button>
+						<p class="field-hint">
+							This will reset all agent memory blocks to their default state.
+						</p>
+					</div>
+				{:else if lettaStatus === 'disconnected'}
+					<div class="field">
+						<div class="setup-instructions">
+							<p><strong>Letta server not running.</strong></p>
+							<p>To start the AI tutor:</p>
+							<ol>
+								<li>Run <code>letta server</code> in a terminal</li>
+								<li>Run <code>cd letta && python setup_agents.py</code></li>
+								<li>Refresh this page</li>
+							</ol>
+						</div>
+					</div>
+				{/if}
 
 				{#if message}
 					<div class="message" class:success={message.type === 'success'} class:error={message.type === 'error'}>
@@ -174,10 +139,7 @@
 			</div>
 
 			<footer class="modal-footer">
-				<button class="btn-secondary" onclick={() => open = false}>Cancel</button>
-				<button class="btn-primary" onclick={saveSettings} disabled={saving}>
-					{saving ? 'Saving...' : 'Save Settings'}
-				</button>
+				<button class="btn-secondary" onclick={() => open = false}>Close</button>
 			</footer>
 		</div>
 	</div>
@@ -252,24 +214,119 @@
 		color: var(--text-primary);
 	}
 
-	.current-key {
+	.status-row {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		padding: var(--space-3);
+		background: var(--bg-elevated);
+		border-radius: var(--radius-md);
+	}
+
+	.status-indicator {
+		font-size: var(--text-sm);
+		font-weight: 500;
+	}
+
+	.status-indicator.connected {
+		color: var(--success);
+	}
+
+	.status-indicator.disconnected {
+		color: var(--error);
+	}
+
+	.status-indicator.checking {
+		color: var(--text-muted);
+	}
+
+	.btn-small {
+		font-size: var(--text-xs);
+		padding: var(--space-1) var(--space-2);
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-sm);
+		color: var(--text-secondary);
+	}
+
+	.btn-small:hover {
+		background: var(--bg-primary);
+		color: var(--text-primary);
+	}
+
+	.agents-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+
+	.agent-item {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
 		padding: var(--space-2) var(--space-3);
 		background: var(--bg-elevated);
 		border-radius: var(--radius-md);
-		margin-bottom: var(--space-2);
+	}
+
+	.agent-status {
+		font-size: var(--text-sm);
+		color: var(--error);
+	}
+
+	.agent-status.active {
+		color: var(--success);
+	}
+
+	.agent-name {
+		font-weight: 500;
+		color: var(--text-primary);
+	}
+
+	.agent-role {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		margin-left: auto;
+	}
+
+	.btn-danger {
+		background: rgba(255, 69, 58, 0.15);
+		color: var(--error);
+		border: 1px solid var(--error);
+		padding: var(--space-2) var(--space-4);
+		border-radius: var(--radius-md);
 		font-size: var(--text-sm);
 	}
 
-	.key-preview {
-		color: var(--text-muted);
-		font-family: var(--font-mono);
+	.btn-danger:hover {
+		background: rgba(255, 69, 58, 0.25);
 	}
 
-	.key-status {
-		color: var(--success);
+	.setup-instructions {
+		padding: var(--space-4);
+		background: var(--bg-elevated);
+		border-radius: var(--radius-md);
+		font-size: var(--text-sm);
+	}
+
+	.setup-instructions p {
+		margin: 0 0 var(--space-2);
+	}
+
+	.setup-instructions ol {
+		margin: var(--space-2) 0 0;
+		padding-left: var(--space-5);
+	}
+
+	.setup-instructions li {
+		margin-bottom: var(--space-1);
+	}
+
+	.setup-instructions code {
+		background: var(--bg-primary);
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		font-size: var(--text-xs);
 	}
 
 	.field-hint {

@@ -536,5 +536,77 @@ export function getAgentActivityForTopic(topicId: string, limit: number = 10): A
 	return all.filter(a => a.topicId === safeTopicId).slice(0, limit);
 }
 
+// =============================================================================
+// Learning Journal (unified notes with ambient context)
+// =============================================================================
+
+const JOURNAL_FILE = join(DATA_DIR, 'journal.json');
+
+export interface JournalEntry {
+	id: string;
+	content: string;
+	timestamp: string;
+	writtenFrom: string; // URL path where the note was written (loose context)
+}
+
+export interface Journal {
+	entries: JournalEntry[];
+}
+
+export function getJournal(): Journal {
+	ensureDataDirs();
+	if (!existsSync(JOURNAL_FILE)) {
+		return { entries: [] };
+	}
+	try {
+		const data = readFileSync(JOURNAL_FILE, 'utf-8');
+		return JSON.parse(data);
+	} catch (error) {
+		console.error(`Failed to read journal: ${error instanceof Error ? error.message : error}`);
+		return { entries: [] };
+	}
+}
+
+export function saveJournal(journal: Journal): void {
+	ensureDataDirs();
+	try {
+		writeFileSync(JOURNAL_FILE, JSON.stringify(journal, null, 2));
+	} catch (error) {
+		console.error(`Failed to save journal: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
+}
+
+export function addJournalEntry(content: string, writtenFrom: string): JournalEntry {
+	const journal = getJournal();
+	const entry: JournalEntry = {
+		id: `note-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+		content,
+		timestamp: new Date().toISOString(),
+		writtenFrom
+	};
+	journal.entries.unshift(entry); // Newest first
+	saveJournal(journal);
+	return entry;
+}
+
+export function updateJournalEntry(id: string, content: string): JournalEntry | null {
+	const journal = getJournal();
+	const entry = journal.entries.find(e => e.id === id);
+	if (!entry) return null;
+	entry.content = content;
+	saveJournal(journal);
+	return entry;
+}
+
+export function deleteJournalEntry(id: string): boolean {
+	const journal = getJournal();
+	const index = journal.entries.findIndex(e => e.id === id);
+	if (index === -1) return false;
+	journal.entries.splice(index, 1);
+	saveJournal(journal);
+	return true;
+}
+
 // Export sanitizeTopicId for use in API routes
 export { sanitizeTopicId };

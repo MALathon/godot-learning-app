@@ -31,9 +31,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!message || typeof message !== 'string') {
 		return json({ error: 'message is required' }, { status: 400 });
 	}
-	if (!topicContext?.title || !topicContext?.category) {
-		return json({ error: 'topicContext with title and category is required' }, { status: 400 });
-	}
 
 	// Save user message to notebook (local history)
 	addMessageToNotebook(topicId, {
@@ -51,13 +48,24 @@ export const POST: RequestHandler = async ({ request }) => {
 		}, { status: 503 });
 	}
 
-	// Build richer context-aware message for Letta
-	const notesSection = topicContext.notes ? `\n\nUser's notes: ${topicContext.notes}` : '';
-	const contextMessage = `[Context: User is studying "${topicContext.title}" (${topicContext.category})]
+	// Build context-aware message for Letta
+	let contextMessage: string;
+
+	if (topicContext?.title && topicContext?.category) {
+		// Topic-specific context
+		const notesSection = topicContext.notes ? `\n\nUser's notes: ${topicContext.notes}` : '';
+		contextMessage = `[Context: User is studying "${topicContext.title}" (${topicContext.category})]
 [Key concepts: ${topicContext.keyPoints?.slice(0, 3).join(', ') || 'N/A'}]
 [Godot connection: ${topicContext.godotConnection || 'N/A'}]${notesSection}
 
 ${message}`;
+	} else {
+		// General context (homepage, resources page, etc.)
+		contextMessage = `[Context: User is on the learning app homepage or browsing - no specific topic selected]
+[Mode: General Godot learning assistance]
+
+${message}`;
+	}
 
 	if (stream) {
 		return handleStreamingResponse(topicId, contextMessage, agentId);

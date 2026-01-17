@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import CodeBlock from '$lib/components/CodeBlock.svelte';
-	import FloatingChat from '$lib/components/FloatingChat.svelte';
 	import { progressStore } from '$lib/stores/progress.svelte';
 	import type { PageData } from './$types';
 	import type { TopicProgress } from '$lib/server/storage';
@@ -20,18 +19,12 @@
 	// extension comes from +page.server.ts
 	const extension = $derived(data.extension);
 	const progress = $derived(progressStore.getTopicProgress(topic.id));
-	const initialNotes = $derived(progress.notes || '');
 
 	// Merge static and extended resources/examples
 	const allResources = $derived([...topic.resources, ...(extension?.resources || [])]);
 	const allCodeExamples = $derived([...topic.codeExamples, ...(extension?.codeExamples || [])]);
 
-	let notes = $state('');
-	let activeTab = $state<'content' | 'exercises' | 'notes'>('content');
-
-	$effect(() => {
-		notes = initialNotes;
-	});
+	let activeTab = $state<'content' | 'exercises'>('content');
 
 	onMount(() => {
 		progressStore.markTopicVisited(topic.id);
@@ -43,12 +36,6 @@
 
 	function handleToggleExercise(index: number) {
 		progressStore.toggleExercise(topic.id, index, topic.exercises.length);
-	}
-
-	function handleNotesChange(e: Event) {
-		const target = e.target as HTMLTextAreaElement;
-		notes = target.value;
-		progressStore.updateNotes(topic.id, notes);
 	}
 
 	function getExerciseStatus(index: number): boolean {
@@ -100,13 +87,6 @@
 			<span class="exercise-count">
 				{progress.exercisesCompleted.filter(Boolean).length}/{topic.exercises.length}
 			</span>
-		</button>
-		<button
-			class="tab"
-			class:active={activeTab === 'notes'}
-			onclick={() => activeTab = 'notes'}
-		>
-			Notes
 		</button>
 	</nav>
 
@@ -173,17 +153,6 @@
 				{/each}
 			</ul>
 		</div>
-	{:else if activeTab === 'notes'}
-		<div class="notes">
-			<p class="notes-intro">
-				Add your own notes, questions, or insights. Saved locally.
-			</p>
-			<textarea
-				value={notes}
-				oninput={handleNotesChange}
-				placeholder="Your notes about this topic..."
-			></textarea>
-		</div>
 	{/if}
 
 	<nav class="topic-nav">
@@ -204,12 +173,6 @@
 	</nav>
 
 </div>
-
-<FloatingChat
-	{topic}
-	progress={data.serverProgress ?? undefined}
-	notes={progress.notes || ''}
-/>
 
 <style>
 	.topic-page {
@@ -409,8 +372,7 @@
 		margin-left: var(--space-2);
 	}
 
-	.exercises-intro,
-	.notes-intro {
+	.exercises-intro {
 		color: var(--text-secondary);
 		margin-bottom: var(--space-6);
 	}
@@ -443,10 +405,6 @@
 	.exercise-text {
 		color: var(--text-primary);
 		line-height: 1.6;
-	}
-
-	.notes textarea {
-		min-height: 300px;
 	}
 
 	.topic-nav {

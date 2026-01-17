@@ -5,11 +5,18 @@
 	import { topics, categories } from '$lib/data/topics';
 	import { progressStore } from '$lib/stores/progress.svelte';
 	import SettingsModal from '$lib/components/SettingsModal.svelte';
+	import LearningPanel from '$lib/components/LearningPanel.svelte';
 
 	let { children } = $props();
 
 	let sidebarOpen = $state(true);
 	let settingsOpen = $state(false);
+	let learningPanelCollapsed = $state(false);
+
+	// Detect current topic from URL for contextual chat
+	const currentTopicId = $derived($page.url.pathname.match(/^\/topic\/(.+)$/)?.[1]);
+	const currentTopic = $derived(currentTopicId ? topics.find(t => t.id === currentTopicId) : undefined);
+	const currentPath = $derived($page.url.pathname);
 
 	const topicsByCategory = $derived(
 		categories.map(cat => ({
@@ -32,7 +39,7 @@
 	<title>Godot Engine Internals</title>
 </svelte:head>
 
-<div class="layout" class:sidebar-collapsed={!sidebarOpen}>
+<div class="layout" class:sidebar-collapsed={!sidebarOpen} class:panel-collapsed={learningPanelCollapsed}>
 	<aside class="sidebar">
 		<header class="sidebar-header">
 			<div class="logo">
@@ -102,6 +109,14 @@
 	<main class="main">
 		{@render children()}
 	</main>
+
+	<!-- Omnipresent Contextually Aware Learning Panel -->
+	<LearningPanel
+		topic={currentTopic}
+		{currentPath}
+		collapsed={learningPanelCollapsed}
+		onToggle={() => learningPanelCollapsed = !learningPanelCollapsed}
+	/>
 </div>
 
 <SettingsModal bind:open={settingsOpen} />
@@ -109,13 +124,21 @@
 <style>
 	.layout {
 		display: grid;
-		grid-template-columns: 280px 1fr;
+		grid-template-columns: 280px 1fr 400px;
 		min-height: 100vh;
 		transition: grid-template-columns var(--transition-base);
 	}
 
 	.layout.sidebar-collapsed {
-		grid-template-columns: 60px 1fr;
+		grid-template-columns: 60px 1fr 400px;
+	}
+
+	.layout.panel-collapsed {
+		grid-template-columns: 280px 1fr 48px;
+	}
+
+	.layout.sidebar-collapsed.panel-collapsed {
+		grid-template-columns: 60px 1fr 48px;
 	}
 
 	.sidebar {
