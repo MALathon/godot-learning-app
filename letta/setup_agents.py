@@ -41,31 +41,36 @@ client = Letta(base_url=LETTA_BASE_URL)
 
 # =============================================================================
 # Custom Tool Definitions
+# Tools read LEARNING_APP_URL from environment at runtime - no hardcoded URLs
 # Each function must be self-contained with imports inside
 # =============================================================================
 
+def get_topics() -> str:
+    """
+    Get all available topics in the Godot learning curriculum.
+    Returns a list of topics with their IDs, titles, and descriptions.
+    Use this to understand what topics exist before adding resources.
+
+    Returns:
+        str: JSON string of topics with id, title, category, and description
+    """
+    import os
+    import json
+    import requests
+
+    app_url = os.getenv("LEARNING_APP_URL", "http://localhost:5173")
+    try:
+        response = requests.get(f"{app_url}/api/letta?action=topics")
+        if response.ok:
+            return json.dumps(response.json(), indent=2)
+        return f"Error: {response.status_code}"
+    except Exception as e:
+        return f"Error connecting to learning app at {app_url}: {e}"
+
+
+# Keep factory for backward compat but it just returns the runtime version
 def make_get_topics(app_url: str):
-    """Factory to create get_topics tool with embedded URL."""
-    def get_topics() -> str:
-        """
-        Get all available topics in the Godot learning curriculum.
-        Returns a list of topics with their IDs, titles, and descriptions.
-        Use this to understand what topics exist before adding resources.
-
-        Returns:
-            str: JSON string of topics with id, title, category, and description
-        """
-        import json
-        import requests
-
-        try:
-            response = requests.get(f"{app_url}/api/letta?action=topics")
-            if response.ok:
-                return json.dumps(response.json(), indent=2)
-            return f"Error: {response.status_code}"
-        except Exception as e:
-            return f"Error connecting to learning app: {e}"
-
+    """Deprecated: URL is now read from LEARNING_APP_URL env var at runtime."""
     return get_topics
 
 
@@ -492,44 +497,24 @@ def create_agents():
     print(f"  Created: curated_content (id: {curated_content_block.id})")
 
     # =========================================================================
-    # Create Tools
+    # Create Tools (using runtime env var - no hardcoded URLs)
     # =========================================================================
     print("\nCreating custom tools...")
+    print(f"  Tools will read LEARNING_APP_URL from environment at runtime")
 
-    tool_factories = [
-        ("get_topics", make_get_topics),
-        ("get_recent_conversations", make_get_recent_conversations),
-        ("get_conversation_details", make_get_conversation_details),
-        ("get_current_extensions", make_get_current_extensions),
-        ("get_student_progress", make_get_student_progress),
-        ("get_student_notes", make_get_student_notes),
-        ("add_resource", make_add_resource),
-        ("add_code_example", make_add_code_example),
-        ("add_lesson", make_add_lesson),
-        ("get_lessons", make_get_lessons)
-    ]
+    from tools import ALL_TOOLS
 
-    all_tools = []
     gideon_tools = []
     curator_tools = []
 
-    for name, factory in tool_factories:
+    for func in ALL_TOOLS:
         try:
-            tool = create_tool_from_source(client, factory, LEARNING_APP_URL)
-            all_tools.append(tool.name)
-
-            # All tools go to Gideon
+            tool = client.tools.create(func=func)
             gideon_tools.append(tool.name)
-
-            # Curator gets curation-focused tools
-            if name in ['get_topics', 'get_recent_conversations', 'get_conversation_details',
-                       'get_current_extensions', 'get_student_progress', 'get_student_notes',
-                       'add_resource', 'add_code_example', 'add_lesson', 'get_lessons']:
-                curator_tools.append(tool.name)
-
+            curator_tools.append(tool.name)
             print(f"  Created tool: {tool.name}")
         except Exception as e:
-            print(f"  Failed to create tool {name}: {e}")
+            print(f"  Failed to create tool {func.__name__}: {e}")
 
     # =========================================================================
     # Create Gideon (Chat Agent)
