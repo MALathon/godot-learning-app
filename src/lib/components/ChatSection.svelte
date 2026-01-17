@@ -4,12 +4,17 @@
 	import type { TopicProgress } from '$lib/server/storage';
 
 	interface Props {
-		topic: Topic;
+		topic?: Topic;
 		progress?: TopicProgress;
 		notes?: string;
 	}
 
 	let { topic, progress, notes = '' }: Props = $props();
+
+	// Context-aware state
+	const hasTopicContext = $derived(!!topic);
+	const contextTitle = $derived(topic?.title ?? 'General');
+	const contextId = $derived(topic?.id ?? 'general');
 
 	// Message types for the enhanced chat
 	interface ChatMessage {
@@ -34,7 +39,6 @@
 	type Message = ChatMessage | ActivityMessage | ThinkingMessage;
 
 	// State
-	let expanded = $state(false);
 	let messages = $state<Message[]>([]);
 	let input = $state('');
 	let loading = $state(false);
@@ -54,17 +58,20 @@
 	const exercisesCompleted = $derived(
 		progress?.exercisesCompleted?.filter(Boolean).length ?? 0
 	);
-	const totalExercises = $derived(topic.exercises.length);
+	const totalExercises = $derived(topic?.exercises?.length ?? 0);
 	const lastVisited = $derived(progress?.lastVisited ?? null);
 
 	onMount(async () => {
-		await loadNotebook();
-		await checkNewContent();
+		// Only load notebook for topic-specific contexts
+		if (hasTopicContext) {
+			await loadNotebook();
+			await checkNewContent();
+		}
 	});
 
-	// Reload notebook when topic changes
+	// Reload notebook when topic changes (only for topic contexts)
 	$effect(() => {
-		if (topic.id) {
+		if (hasTopicContext && contextId) {
 			loadNotebook().catch(e => {
 				console.error('Failed to load notebook:', e);
 			});
@@ -73,7 +80,7 @@
 
 	async function loadNotebook() {
 		try {
-			const response = await fetch(`/api/notebook/${topic.id}`);
+			const response = await fetch(`/api/notebook/${contextId}`);
 			if (response.ok) {
 				const notebook = await response.json();
 				messages = notebook.messages || [];
@@ -85,8 +92,9 @@
 	}
 
 	async function checkNewContent() {
+		if (!hasTopicContext) return;
 		try {
-			const response = await fetch(`/api/letta/activity?topicId=${topic.id}&limit=10`);
+			const response = await fetch(`/api/letta/activity?topicId=${contextId}&limit=10`);
 			if (response.ok) {
 				const data = await response.json();
 				// Count activities since last visit
@@ -138,24 +146,30 @@
 		}];
 
 		try {
+			const requestBody: Record<string, unknown> = {
+				topicId: contextId,
+				message: userMessage,
+				stream: true
+			};
+
+			// Add topic context only if we have a topic
+			if (hasTopicContext && topic) {
+				requestBody.topicContext = {
+					title: topic.title,
+					category: topic.category,
+					description: topic.description,
+					keyPoints: topic.keyPoints,
+					godotConnection: topic.godotConnection,
+					exercises: topic.exercises,
+					notes: notes || ''
+				};
+			}
+
 			const response = await fetch('/api/chat-letta', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				signal: abortController.signal,
-				body: JSON.stringify({
-					topicId: topic.id,
-					message: userMessage,
-					stream: true,
-					topicContext: {
-						title: topic.title,
-						category: topic.category,
-						description: topic.description,
-						keyPoints: topic.keyPoints,
-						godotConnection: topic.godotConnection,
-						exercises: topic.exercises,
-						notes: notes || ''
-					}
-				})
+				body: JSON.stringify(requestBody)
 			});
 
 			if (!response.ok) {
@@ -288,10 +302,10 @@
 	}
 
 	async function clearChat() {
-		if (!confirm('Clear all chat history for this topic?')) return;
+		if (!confirm('Clear all chat history?')) return;
 
 		try {
-			await fetch(`/api/notebook/${topic.id}`, {
+			await fetch(`/api/notebook/${contextId}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ action: 'clear' })
@@ -351,13 +365,6 @@
 		}
 	}
 
-	function handleGlobalKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && expanded) {
-			e.preventDefault();
-			expanded = false;
-		}
-	}
-
 	function escapeHtml(text: string): string {
 		return text
 			.replace(/&/g, '&amp;')
@@ -392,13 +399,6 @@
 		return `${days}d ago`;
 	}
 
-	function handleClickOutside(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		if (expanded && !target.closest('.chat-panel') && !target.closest('.chat-bubble')) {
-			expanded = false;
-		}
-	}
-
 	const activityIcons: Record<string, string> = {
 		search: 'S',
 		add_resource: 'R',
@@ -408,57 +408,28 @@
 	};
 </script>
 
-<svelte:window onclick={handleClickOutside} onkeydown={handleGlobalKeydown} />
+<div class="chat-section">
+	<header class="section-header">
+		<div class="header-left">
+			<span class="agent-name">Gideon</span>
+			<span class="topic-context">{contextTitle}</span>
+		</div>
+		<div class="header-actions">
+			<button
+				class="icon-btn"
+				onclick={() => { showMemoryPanel = !showMemoryPanel; if (showMemoryPanel) loadMemory(); }}
+				title="Agent memory"
+			>
+				M
+			</button>
+			<button class="icon-btn" onclick={clearChat} title="Clear chat">
+				X
+			</button>
+		</div>
+	</header>
 
-<!-- Collapsed: Minimal bubble with notification badge -->
-{#if !expanded}
-	<button
-		class="chat-bubble"
-		onclick={(e) => { e.stopPropagation(); expanded = true; newContentCount = 0; }}
-		aria-label="Open AI tutor"
-	>
-		<span class="bubble-icon">
-			{#if messages.length > 0}
-				<span class="message-count">{messages.length}</span>
-			{:else}
-				<span class="chat-emoji">G</span>
-			{/if}
-		</span>
-		{#if newContentCount > 0}
-			<span class="notification-badge">{newContentCount}</span>
-		{/if}
-	</button>
-{:else}
-	<!-- Expanded: Full chat panel -->
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="chat-panel" onclick={(e) => e.stopPropagation()}>
-		<header class="panel-header">
-			<div class="header-left">
-				<span class="agent-name">Gideon</span>
-				<span class="topic-context">{topic.title}</span>
-			</div>
-			<div class="header-actions">
-				<button
-					class="icon-btn"
-					onclick={() => { showMemoryPanel = !showMemoryPanel; if (showMemoryPanel) loadMemory(); }}
-					title="Agent memory"
-				>
-					M
-				</button>
-				<button class="icon-btn" onclick={clearChat} title="Clear chat">
-					X
-				</button>
-				<button
-					class="close-btn"
-					onclick={() => expanded = false}
-					aria-label="Close chat"
-				>
-					x
-				</button>
-			</div>
-		</header>
-
-		<!-- Context Bar -->
+	<!-- Context Bar -->
+	{#if hasTopicContext}
 		<div class="context-bar">
 			<span class="context-item">
 				<span class="context-label">Progress:</span>
@@ -474,56 +445,64 @@
 				</span>
 			{/if}
 		</div>
+	{:else}
+		<div class="context-bar">
+			<span class="context-item">
+				<span class="context-value">Ask anything about Godot internals</span>
+			</span>
+		</div>
+	{/if}
 
-		<!-- Memory Panel (overlay) -->
-		{#if showMemoryPanel}
-			<div class="memory-panel">
-				<div class="memory-header">
-					<span>What Gideon Knows</span>
-					<div class="memory-actions">
-						<button class="reset-btn" onclick={resetMemory} disabled={resetting}>
-							{resetting ? '...' : 'Reset'}
-						</button>
-						<button onclick={() => showMemoryPanel = false}>x</button>
-					</div>
+	<!-- Memory Panel (overlay) -->
+	{#if showMemoryPanel}
+		<div class="memory-panel">
+			<div class="memory-header">
+				<span>What Gideon Knows</span>
+				<div class="memory-actions">
+					<button class="reset-btn" onclick={resetMemory} disabled={resetting}>
+						{resetting ? '...' : 'Reset'}
+					</button>
+					<button onclick={() => showMemoryPanel = false}>x</button>
 				</div>
-				<div class="memory-content">
-					{#each memoryBlocks as block}
-						<div class="memory-block" class:shared={block.isShared}>
-							<div class="memory-label">
-								{block.label}
-								{#if block.isShared}
-									<span class="shared-badge">Shared</span>
-								{/if}
-							</div>
-							<div class="memory-value">{block.value.slice(0, 200)}{block.value.length > 200 ? '...' : ''}</div>
+			</div>
+			<div class="memory-content">
+				{#each memoryBlocks as block}
+					<div class="memory-block" class:shared={block.isShared}>
+						<div class="memory-label">
+							{block.label}
+							{#if block.isShared}
+								<span class="shared-badge">Shared</span>
+							{/if}
 						</div>
-					{/each}
-					{#if memoryBlocks.length === 0}
-						<p class="no-memory">Unable to load agent memory</p>
-					{/if}
-				</div>
+						<div class="memory-value">{block.value.slice(0, 200)}{block.value.length > 200 ? '...' : ''}</div>
+					</div>
+				{/each}
+				{#if memoryBlocks.length === 0}
+					<p class="no-memory">Unable to load agent memory</p>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	{#if !lettaAvailable}
+		<div class="no-api-key">
+			<p>AI tutor is unavailable. The Letta server may not be running.</p>
+			<p class="hint">Start the Letta server on localhost:8283</p>
+		</div>
+	{:else}
+		<!-- Thinking indicator -->
+		{#if currentThinking && showThinking}
+			<div class="thinking-bubble">
+				<span class="thinking-icon">T</span>
+				<span class="thinking-text">{currentThinking.slice(0, 150)}{currentThinking.length > 150 ? '...' : ''}</span>
 			</div>
 		{/if}
 
-		{#if !lettaAvailable}
-			<div class="no-api-key">
-				<p>AI tutor is unavailable. The Letta server may not be running.</p>
-				<p class="hint">Start the Letta server on localhost:8283</p>
-			</div>
-		{:else}
-			<!-- Thinking indicator -->
-			{#if currentThinking && showThinking}
-				<div class="thinking-bubble">
-					<span class="thinking-icon">T</span>
-					<span class="thinking-text">{currentThinking.slice(0, 150)}{currentThinking.length > 150 ? '...' : ''}</span>
-				</div>
-			{/if}
-
-			<div class="messages" bind:this={messagesContainer}>
-				{#if messages.length === 0}
-					<div class="empty-state">
-						<p>Ask questions about <strong>{topic.title}</strong></p>
+		<div class="messages" bind:this={messagesContainer}>
+			{#if messages.length === 0}
+				<div class="empty-state">
+					{#if hasTopicContext}
+						<p>Ask questions about <strong>{contextTitle}</strong></p>
 						<div class="suggestions">
 							<button onclick={() => { input = "Explain this concept in simple terms"; sendMessage(); }}>
 								Explain simply
@@ -535,155 +514,95 @@
 								Connect to my code
 							</button>
 						</div>
-					</div>
-				{:else}
-					{#each messages as message}
-						{#if 'type' in message && message.type === 'activity'}
-							<!-- Activity message -->
-							<div class="activity-message">
-								<span class="activity-icon">{activityIcons[message.action]}</span>
-								<span class="activity-text">{message.details}</span>
-							</div>
-						{:else if 'role' in message}
-							<!-- Chat message -->
-							<div class="message" class:user={message.role === 'user'} class:assistant={message.role === 'assistant'}>
-								<div class="message-content">
-									{@html formatMessage(message.content)}
-								</div>
-							</div>
-						{/if}
-					{/each}
-				{/if}
-
-				{#if loading}
-					<div class="message assistant loading">
-						<div class="typing-indicator">
-							<span></span>
-							<span></span>
-							<span></span>
+					{:else}
+						<p>I'm <strong>Gideon</strong>, your Godot learning companion</p>
+						<div class="suggestions">
+							<button onclick={() => { input = "What should I learn first?"; sendMessage(); }}>
+								Where to start
+							</button>
+							<button onclick={() => { input = "Explain Godot's architecture"; sendMessage(); }}>
+								Godot architecture
+							</button>
+							<button onclick={() => { input = "What topics have I completed?"; sendMessage(); }}>
+								My progress
+							</button>
 						</div>
-					</div>
-				{/if}
+					{/if}
+				</div>
+			{:else}
+				{#each messages as message}
+					{#if 'type' in message && message.type === 'activity'}
+						<!-- Activity message -->
+						<div class="activity-message">
+							<span class="activity-icon">{activityIcons[message.action]}</span>
+							<span class="activity-text">{message.details}</span>
+						</div>
+					{:else if 'role' in message}
+						<!-- Chat message -->
+						<div class="message" class:user={message.role === 'user'} class:assistant={message.role === 'assistant'}>
+							<div class="message-content">
+								{@html formatMessage(message.content)}
+							</div>
+						</div>
+					{/if}
+				{/each}
+			{/if}
 
-				{#if error}
-					<div class="error-message">
-						{error}
+			{#if loading}
+				<div class="message assistant loading">
+					<div class="typing-indicator">
+						<span></span>
+						<span></span>
+						<span></span>
 					</div>
-				{/if}
-			</div>
+				</div>
+			{/if}
 
-			<form class="input-area" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-				<input
-					type="text"
-					bind:value={input}
-					onkeydown={handleKeydown}
-					placeholder="Ask about {topic.title}..."
-					disabled={loading}
-				/>
-				{#if loading}
-					<button type="button" class="stop-btn" onclick={stopGeneration}>
-						Stop
-					</button>
-				{:else}
-					<button type="submit" disabled={!input.trim()}>
-						&gt;
-					</button>
-				{/if}
-			</form>
-		{/if}
-	</div>
-{/if}
+			{#if error}
+				<div class="error-message">
+					{error}
+				</div>
+			{/if}
+		</div>
+
+		<form class="input-area" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+			<input
+				type="text"
+				bind:value={input}
+				onkeydown={handleKeydown}
+				placeholder={hasTopicContext ? `Ask about ${contextTitle}...` : "Ask about Godot internals..."}
+				disabled={loading}
+			/>
+			{#if loading}
+				<button type="button" class="stop-btn" onclick={stopGeneration}>
+					Stop
+				</button>
+			{:else}
+				<button type="submit" disabled={!input.trim()}>
+					&gt;
+				</button>
+			{/if}
+		</form>
+	{/if}
+</div>
 
 <style>
-	/* Bubble - collapsed state */
-	.chat-bubble {
-		position: fixed;
-		bottom: var(--space-6);
-		right: var(--space-6);
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		background: var(--accent);
-		border: none;
-		cursor: pointer;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		z-index: 100;
-		transition: transform 0.2s ease;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.chat-bubble:hover {
-		transform: scale(1.1);
-	}
-
-	.bubble-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.chat-emoji {
-		font-size: 20px;
-		font-weight: 700;
-		color: white;
-	}
-
-	.message-count {
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: white;
-		background: rgba(0, 0, 0, 0.2);
-		border-radius: 50%;
-		width: 28px;
-		height: 28px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.notification-badge {
-		position: absolute;
-		top: -4px;
-		right: -4px;
-		background: var(--error);
-		color: white;
-		font-size: 10px;
-		font-weight: 700;
-		width: 20px;
-		height: 20px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	/* Panel - expanded state */
-	.chat-panel {
-		position: fixed;
-		bottom: var(--space-6);
-		right: var(--space-6);
-		width: 420px;
-		max-width: calc(100vw - var(--space-8));
-		max-height: 560px;
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-default);
-		border-radius: 12px;
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-		z-index: 100;
+	.chat-section {
 		display: flex;
 		flex-direction: column;
+		height: 100%;
+		background: var(--bg-secondary);
 		overflow: hidden;
 	}
 
-	.panel-header {
+	.section-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		padding: var(--space-3) var(--space-4);
 		border-bottom: 1px solid var(--border-subtle);
 		background: var(--bg-elevated);
+		flex-shrink: 0;
 	}
 
 	.header-left {
@@ -724,19 +643,6 @@
 		background: var(--bg-hover);
 	}
 
-	.close-btn {
-		background: transparent;
-		color: var(--text-muted);
-		padding: var(--space-1) var(--space-2);
-		font-size: var(--text-lg);
-		line-height: 1;
-		border: none;
-	}
-
-	.close-btn:hover {
-		color: var(--text-primary);
-	}
-
 	/* Context Bar */
 	.context-bar {
 		display: flex;
@@ -746,6 +652,7 @@
 		background: var(--bg-primary);
 		border-bottom: 1px solid var(--border-subtle);
 		font-size: var(--text-xs);
+		flex-shrink: 0;
 	}
 
 	.context-item {
@@ -894,6 +801,7 @@
 		border-bottom: 1px solid var(--border-subtle);
 		font-size: var(--text-xs);
 		color: var(--text-secondary);
+		flex-shrink: 0;
 	}
 
 	.thinking-icon {
@@ -973,7 +881,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-3);
-		max-height: 350px;
 	}
 
 	.empty-state {
@@ -1109,6 +1016,7 @@
 		padding: var(--space-3);
 		border-top: 1px solid var(--border-subtle);
 		background: var(--bg-elevated);
+		flex-shrink: 0;
 	}
 
 	.input-area input {
@@ -1153,20 +1061,5 @@
 
 	.stop-btn:hover {
 		background: #ff6b5a !important;
-	}
-
-	/* Mobile responsiveness */
-	@media (max-width: 480px) {
-		.chat-panel {
-			width: calc(100vw - var(--space-4));
-			right: var(--space-2);
-			bottom: var(--space-2);
-			max-height: 70vh;
-		}
-
-		.context-bar {
-			flex-wrap: wrap;
-			gap: var(--space-2);
-		}
 	}
 </style>
