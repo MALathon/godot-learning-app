@@ -7,6 +7,7 @@ const NOTEBOOKS_DIR = join(DATA_DIR, 'notebooks');
 const PROGRESS_FILE = join(DATA_DIR, 'progress.json');
 const EXTENSIONS_DIR = join(DATA_DIR, 'extensions');
 const LESSONS_DIR = join(DATA_DIR, 'lessons');
+const CONTENT_DIR = join(DATA_DIR, 'content');
 
 /**
  * Sanitize topic ID to prevent path traversal attacks.
@@ -30,6 +31,9 @@ function ensureDataDirs() {
 	}
 	if (!existsSync(LESSONS_DIR)) {
 		mkdirSync(LESSONS_DIR, { recursive: true });
+	}
+	if (!existsSync(CONTENT_DIR)) {
+		mkdirSync(CONTENT_DIR, { recursive: true });
 	}
 }
 
@@ -606,6 +610,345 @@ export function deleteJournalEntry(id: string): boolean {
 	journal.entries.splice(index, 1);
 	saveJournal(journal);
 	return true;
+}
+
+// =============================================================================
+// Topic Content (AI-generated educational prose)
+// =============================================================================
+
+export interface ContentSection {
+	title: string;
+	content: string;               // Markdown prose
+	level?: 'beginner' | 'intermediate' | 'advanced';
+}
+
+export interface TopicContent {
+	introduction: string;          // Why this matters, context setting
+	sections: ContentSection[];    // Main educational content
+	summary?: string;              // Key takeaways
+	nextSteps?: string;            // What to learn next
+	generatedAt?: string;          // When AI generated this
+	generatedBy?: 'ai' | 'human';  // Who wrote it
+}
+
+export function getTopicContent(topicId: string): TopicContent | null {
+	ensureDataDirs();
+	const safeTopicId = sanitizeTopicId(topicId);
+	const filePath = join(CONTENT_DIR, `${safeTopicId}.json`);
+	if (!existsSync(filePath)) {
+		return null;
+	}
+	try {
+		const data = readFileSync(filePath, 'utf-8');
+		return JSON.parse(data);
+	} catch (error) {
+		console.error(`Failed to read topic content for ${topicId}: ${error instanceof Error ? error.message : error}`);
+		return null;
+	}
+}
+
+export function saveTopicContent(topicId: string, content: TopicContent): void {
+	ensureDataDirs();
+	const safeTopicId = sanitizeTopicId(topicId);
+	const filePath = join(CONTENT_DIR, `${safeTopicId}.json`);
+
+	// Set generation metadata
+	content.generatedAt = new Date().toISOString();
+	content.generatedBy = content.generatedBy || 'ai';
+
+	try {
+		writeFileSync(filePath, JSON.stringify(content, null, 2));
+	} catch (error) {
+		console.error(`Failed to save topic content for ${safeTopicId}: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
+}
+
+export function getAllTopicContent(): Record<string, TopicContent> {
+	ensureDataDirs();
+	if (!existsSync(CONTENT_DIR)) {
+		return {};
+	}
+	const files = readdirSync(CONTENT_DIR) as string[];
+	const allContent: Record<string, TopicContent> = {};
+	for (const f of files) {
+		if (f.endsWith('.json')) {
+			const topicId = f.replace('.json', '');
+			const content = getTopicContent(topicId);
+			if (content) {
+				allContent[topicId] = content;
+			}
+		}
+	}
+	return allContent;
+}
+
+export function deleteTopicContent(topicId: string): boolean {
+	const safeTopicId = sanitizeTopicId(topicId);
+	const filePath = join(CONTENT_DIR, `${safeTopicId}.json`);
+	if (existsSync(filePath)) {
+		unlinkSync(filePath);
+		return true;
+	}
+	return false;
+}
+
+// =============================================================================
+// Content Gap Analysis
+// =============================================================================
+
+export interface ContentGaps {
+	topicId: string;
+	hasProseContent: boolean;
+	proseContentAge?: number; // days since generation
+	resourceCount: number;
+	aiResourceCount: number;
+	codeExampleCount: number;
+	aiCodeExampleCount: number;
+	lessonCount: number;
+	gaps: {
+		needsProseContent: boolean;
+		needsResources: boolean;
+		needsCodeExamples: boolean;
+		needsLessons: boolean;
+	};
+	priority: 'high' | 'medium' | 'low';
+	recommendations: string[];
+}
+
+const MIN_RESOURCES = 3;
+const MIN_CODE_EXAMPLES = 2;
+const PROSE_REFRESH_DAYS = 30;
+
+export function analyzeContentGaps(topicId: string): ContentGaps {
+	const safeTopicId = sanitizeTopicId(topicId);
+
+	// Get all content sources
+	const proseContent = getTopicContent(safeTopicId);
+	const extension = getTopicExtension(safeTopicId);
+	const lessons = getLessonsForTopic(safeTopicId);
+
+	// Calculate counts
+	const resourceCount = extension.resources.length;
+	const aiResourceCount = extension.resources.filter(r => r.addedBy === 'ai').length;
+	const codeExampleCount = extension.codeExamples.length;
+	const aiCodeExampleCount = extension.codeExamples.filter(c => c.addedBy === 'ai').length;
+	const lessonCount = lessons.length;
+
+	// Check prose content age
+	let proseContentAge: number | undefined;
+	if (proseContent?.generatedAt) {
+		const generatedDate = new Date(proseContent.generatedAt);
+		const now = new Date();
+		proseContentAge = Math.floor((now.getTime() - generatedDate.getTime()) / (1000 * 60 * 60 * 24));
+	}
+
+	// Identify gaps
+	const needsProseContent = !proseContent || !proseContent.sections?.length ||
+		(proseContentAge !== undefined && proseContentAge > PROSE_REFRESH_DAYS);
+	const needsResources = resourceCount < MIN_RESOURCES;
+	const needsCodeExamples = codeExampleCount < MIN_CODE_EXAMPLES;
+	const needsLessons = lessonCount === 0;
+
+	// Calculate priority
+	const gapCount = [needsProseContent, needsResources, needsCodeExamples, needsLessons].filter(Boolean).length;
+	let priority: 'high' | 'medium' | 'low';
+	if (needsProseContent || gapCount >= 3) {
+		priority = 'high';
+	} else if (gapCount >= 2) {
+		priority = 'medium';
+	} else {
+		priority = 'low';
+	}
+
+	// Generate recommendations
+	const recommendations: string[] = [];
+	if (needsProseContent) {
+		if (!proseContent) {
+			recommendations.push('Generate educational prose content for this topic');
+		} else if (proseContentAge && proseContentAge > PROSE_REFRESH_DAYS) {
+			recommendations.push(`Refresh prose content (${proseContentAge} days old)`);
+		}
+	}
+	if (needsResources) {
+		recommendations.push(`Add ${MIN_RESOURCES - resourceCount} more resources`);
+	}
+	if (needsCodeExamples) {
+		recommendations.push(`Add ${MIN_CODE_EXAMPLES - codeExampleCount} more code examples`);
+	}
+	if (needsLessons) {
+		recommendations.push('Generate at least one focused lesson');
+	}
+
+	return {
+		topicId: safeTopicId,
+		hasProseContent: !!proseContent?.sections?.length,
+		proseContentAge,
+		resourceCount,
+		aiResourceCount,
+		codeExampleCount,
+		aiCodeExampleCount,
+		lessonCount,
+		gaps: {
+			needsProseContent,
+			needsResources,
+			needsCodeExamples,
+			needsLessons
+		},
+		priority,
+		recommendations
+	};
+}
+
+export function getAllContentGaps(): ContentGaps[] {
+	// This would need access to all topic IDs - we'll import from the caller
+	// For now, return empty - caller should pass topic IDs
+	return [];
+}
+
+export function getTopicsNeedingContent(topicIds: string[]): ContentGaps[] {
+	return topicIds
+		.map(id => analyzeContentGaps(id))
+		.filter(g => g.priority === 'high' || g.priority === 'medium')
+		.sort((a, b) => {
+			// Sort by priority, then by gap count
+			const priorityOrder = { high: 0, medium: 1, low: 2 };
+			if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+				return priorityOrder[a.priority] - priorityOrder[b.priority];
+			}
+			const aGaps = Object.values(a.gaps).filter(Boolean).length;
+			const bGaps = Object.values(b.gaps).filter(Boolean).length;
+			return bGaps - aGaps;
+		});
+}
+
+// =============================================================================
+// Content Notifications (track new additions for "What's New")
+// =============================================================================
+
+const NOTIFICATIONS_FILE = join(DATA_DIR, 'notifications.json');
+
+export interface ContentNotification {
+	id: string;
+	type: 'prose' | 'resource' | 'code_example' | 'lesson';
+	topicId: string;
+	title: string;
+	description?: string;
+	timestamp: string;
+	seen: boolean;
+}
+
+export interface NotificationsData {
+	notifications: ContentNotification[];
+	lastSeen: string | null;
+}
+
+const MAX_NOTIFICATIONS = 50;
+
+export function getNotifications(): NotificationsData {
+	ensureDataDirs();
+	if (!existsSync(NOTIFICATIONS_FILE)) {
+		return { notifications: [], lastSeen: null };
+	}
+	try {
+		const data = readFileSync(NOTIFICATIONS_FILE, 'utf-8');
+		return JSON.parse(data);
+	} catch (error) {
+		console.error(`Failed to read notifications: ${error instanceof Error ? error.message : error}`);
+		return { notifications: [], lastSeen: null };
+	}
+}
+
+export function saveNotifications(data: NotificationsData): void {
+	ensureDataDirs();
+	try {
+		writeFileSync(NOTIFICATIONS_FILE, JSON.stringify(data, null, 2));
+	} catch (error) {
+		console.error(`Failed to save notifications: ${error instanceof Error ? error.message : error}`);
+	}
+}
+
+export function addNotification(notification: Omit<ContentNotification, 'id' | 'timestamp' | 'seen'>): ContentNotification {
+	const data = getNotifications();
+
+	const newNotification: ContentNotification = {
+		...notification,
+		id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+		timestamp: new Date().toISOString(),
+		seen: false
+	};
+
+	data.notifications.unshift(newNotification);
+
+	// Keep only recent notifications
+	if (data.notifications.length > MAX_NOTIFICATIONS) {
+		data.notifications = data.notifications.slice(0, MAX_NOTIFICATIONS);
+	}
+
+	saveNotifications(data);
+	return newNotification;
+}
+
+export function markNotificationsSeen(): void {
+	const data = getNotifications();
+	data.lastSeen = new Date().toISOString();
+	data.notifications = data.notifications.map(n => ({ ...n, seen: true }));
+	saveNotifications(data);
+}
+
+export function getUnseenCount(): number {
+	const data = getNotifications();
+	return data.notifications.filter(n => !n.seen).length;
+}
+
+export function getRecentNotifications(limit: number = 20): ContentNotification[] {
+	const data = getNotifications();
+	return data.notifications.slice(0, limit);
+}
+
+// =============================================================================
+// Learning Goal (global context for agents)
+// =============================================================================
+
+const GOAL_FILE = join(DATA_DIR, 'learning_goal.json');
+
+export interface LearningGoal {
+	goal: string;
+	updatedAt: string;
+}
+
+const DEFAULT_GOAL: LearningGoal = {
+	goal: 'Learn game programming through studying Godot under the hood',
+	updatedAt: new Date().toISOString()
+};
+
+export function getLearningGoal(): LearningGoal {
+	ensureDataDirs();
+	if (!existsSync(GOAL_FILE)) {
+		return DEFAULT_GOAL;
+	}
+	try {
+		const data = readFileSync(GOAL_FILE, 'utf-8');
+		return JSON.parse(data);
+	} catch (error) {
+		console.error(`Failed to read learning goal: ${error instanceof Error ? error.message : error}`);
+		return DEFAULT_GOAL;
+	}
+}
+
+export function saveLearningGoal(goal: string): LearningGoal {
+	ensureDataDirs();
+	const data: LearningGoal = {
+		goal,
+		updatedAt: new Date().toISOString()
+	};
+	try {
+		writeFileSync(GOAL_FILE, JSON.stringify(data, null, 2));
+	} catch (error) {
+		console.error(`Failed to save learning goal: ${error instanceof Error ? error.message : error}`);
+		throw error;
+	}
+	return data;
 }
 
 // Export sanitizeTopicId for use in API routes

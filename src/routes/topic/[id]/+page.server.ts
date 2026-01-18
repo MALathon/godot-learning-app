@@ -1,4 +1,4 @@
-import { getTopicExtension, getLessonsForTopic, getAgentActivityForTopic, getProgress } from '$lib/server/storage';
+import { getTopicExtension, getLessonsForTopic, getAgentActivityForTopic, getProgress, getTopicContent } from '$lib/server/storage';
 import { triggerBackgroundCuration } from '$lib/server/letta';
 import type { PageServerLoad } from './$types';
 
@@ -15,6 +15,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		notes: ''
 	};
 
+	// Load AI-generated content if available
+	const generatedContent = getTopicContent(topicId);
+
 	// Trigger background curation for this topic (non-blocking)
 	triggerBackgroundCuration(topicId, 'topic_visit');
 
@@ -22,6 +25,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		extension,
 		lessons,
 		recentActivity,
-		serverProgress: topicProgress
+		serverProgress: topicProgress,
+		generatedContent
 	};
 };

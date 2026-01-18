@@ -118,6 +118,7 @@ export async function isLettaAvailable(): Promise<boolean> {
 /**
  * Trigger background curation for a topic (fire-and-forget with error logging).
  * Shared utility for topic visits and post-conversation curation.
+ * Now uses gap analysis to intelligently fill missing content.
  */
 export function triggerBackgroundCuration(topicId: string, trigger: string = 'topic_visit'): void {
 	if (!isValidInternalUrl(INTERNAL_URL)) {
@@ -125,22 +126,23 @@ export function triggerBackgroundCuration(topicId: string, trigger: string = 'to
 		return;
 	}
 
-	fetch(`${INTERNAL_URL}/api/letta/curate`, {
+	// Use the new gap-filling endpoint which analyzes and fills intelligently
+	fetch(`${INTERNAL_URL}/api/content/fill-gaps`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			mode: 'topic',
 			topicId,
+			mode: 'single',
 			background: true,
 			trigger
 		})
 	})
 		.then((response) => {
 			if (!response.ok) {
-				console.error(`Background curation failed for topic ${topicId}: HTTP ${response.status}`);
+				console.error(`Background gap filling failed for topic ${topicId}: HTTP ${response.status}`);
 			}
 		})
 		.catch((error) => {
-			console.error(`Background curation trigger failed for topic ${topicId}:`, error.message);
+			console.error(`Background gap filling trigger failed for topic ${topicId}:`, error.message);
 		});
 }

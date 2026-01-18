@@ -22,7 +22,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ error: 'Invalid JSON body' }, { status: 400 });
 	}
 
-	const { topicId, message, topicContext, stream = false } = body;
+	const { topicId, message, topicContext, stream = false, learningGoal } = body;
 
 	// Input validation
 	if (!topicId || typeof topicId !== 'string') {
@@ -50,19 +50,20 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Build context-aware message for Letta
 	let contextMessage: string;
+	const goalSection = learningGoal ? `\n[Learning Goal: ${learningGoal}]` : '';
 
 	if (topicContext?.title && topicContext?.category) {
 		// Topic-specific context
-		const notesSection = topicContext.notes ? `\n\nUser's notes: ${topicContext.notes}` : '';
+		const notesSection = topicContext.notes ? `\n[User's notes: ${topicContext.notes}]` : '';
 		contextMessage = `[Context: User is studying "${topicContext.title}" (${topicContext.category})]
 [Key concepts: ${topicContext.keyPoints?.slice(0, 3).join(', ') || 'N/A'}]
-[Godot connection: ${topicContext.godotConnection || 'N/A'}]${notesSection}
+[Godot connection: ${topicContext.godotConnection || 'N/A'}]${goalSection}${notesSection}
 
 ${message}`;
 	} else {
 		// General context (homepage, resources page, etc.)
 		contextMessage = `[Context: User is on the learning app homepage or browsing - no specific topic selected]
-[Mode: General Godot learning assistance]
+[Mode: General Godot learning assistance]${goalSection}
 
 ${message}`;
 	}
@@ -182,9 +183,15 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 	const readableStream = new ReadableStream<Uint8Array>({
 		async start(controller) {
 			const encoder = new TextEncoder();
+			let isClosed = false;
 
 			function sendEvent(event: string, data: unknown) {
-				controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				if (isClosed) return;
+				try {
+					controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+				} catch {
+					// Controller may be closed
+				}
 			}
 
 			try {
@@ -202,6 +209,7 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 					const errorData = await response.text();
 					console.error('Letta API error:', errorData);
 					sendEvent('error', { error: 'Letta API request failed' });
+					isClosed = true;
 					controller.close();
 					return;
 				}
@@ -209,6 +217,7 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 				const reader = response.body?.getReader();
 				if (!reader) {
 					sendEvent('error', { error: 'No response body' });
+					isClosed = true;
 					controller.close();
 					return;
 				}
@@ -216,7 +225,14 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 				const decoder = new TextDecoder();
 				let buffer = '';
 				let fullResponse = '';
+
+				// Track accumulated arguments per tool call (Letta sends deltas, not full values)
+				const toolCallArgs: Map<string, string> = new Map();
 				let lastSentLength = 0;
+
+				// Accumulate reasoning for batch sending
+				let reasoningBuffer = '';
+				let reasoningTimeout: ReturnType<typeof setTimeout> | null = null;
 
 				while (true) {
 					const { done, value } = await reader.read();
@@ -237,92 +253,101 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 							// Letta sends different message types
 							if (event.message_type === 'tool_call_message') {
 								const toolCall = event.tool_call;
-								if (toolCall?.name === 'send_message' && toolCall.arguments) {
-									// send_message contains the actual response text
-									let extractedMessage: string | null = null;
+								const toolCallId = toolCall?.tool_call_id || 'default';
 
-									try {
-										// Try to parse complete JSON first
-										const args = JSON.parse(toolCall.arguments);
-										if (args.message) {
-											extractedMessage = args.message;
+								if (toolCall?.name === 'send_message') {
+									// Letta streams arguments as DELTAS - accumulate them
+									if (toolCall.arguments) {
+										const currentArgs = toolCallArgs.get(toolCallId) || '';
+										const newArgs = currentArgs + toolCall.arguments;
+										toolCallArgs.set(toolCallId, newArgs);
+
+										// Try to extract message from accumulated arguments
+										let extractedMessage: string | null = null;
+										try {
+											const parsed = JSON.parse(newArgs);
+											if (parsed.message) {
+												extractedMessage = parsed.message;
+											}
+										} catch {
+											// Not complete JSON yet - try partial extraction
+											extractedMessage = extractMessageFromPartialJson(newArgs);
 										}
-									} catch (parseError) {
-										// Partial JSON during streaming - expected, use custom parser
-										extractedMessage = extractMessageFromPartialJson(toolCall.arguments);
-									}
 
-									if (extractedMessage && extractedMessage.length > lastSentLength) {
-										// Send only the new content
-										const newText = extractedMessage.slice(lastSentLength);
-										if (newText) {
-											fullResponse = extractedMessage;
-											lastSentLength = extractedMessage.length;
-											sendEvent('text', { text: newText });
+										if (extractedMessage && extractedMessage.length > lastSentLength) {
+											const newText = extractedMessage.slice(lastSentLength);
+											if (newText) {
+												fullResponse = extractedMessage;
+												lastSentLength = extractedMessage.length;
+												sendEvent('text', { text: newText });
+											}
 										}
 									}
 								} else if (toolCall?.name) {
-									// Other tool calls - parse arguments for context
-									let toolArgs: ToolArgs = {};
-									try {
-										if (toolCall.arguments) {
-											toolArgs = typeof toolCall.arguments === 'string'
-												? JSON.parse(toolCall.arguments)
-												: toolCall.arguments;
-										}
-									} catch (parseError) {
-										// Arguments not valid JSON yet - expected during streaming
-										console.debug(`Tool args parse incomplete for ${toolCall.name}: partial JSON`);
+									// Other tool calls - accumulate arguments
+									if (toolCall.arguments) {
+										const currentArgs = toolCallArgs.get(toolCallId) || '';
+										toolCallArgs.set(toolCallId, currentArgs + toolCall.arguments);
 									}
 
-									// Log agent activity for non-send_message tools
-									const activityType = mapToolNameToActivity(toolCall.name);
+									// Only emit tool event on first chunk (when no args accumulated yet)
+									if (!toolCallArgs.has(toolCallId) || toolCallArgs.get(toolCallId) === toolCall.arguments) {
+										sendEvent('tool', {
+											name: toolCall.name,
+											status: 'called'
+										});
+									}
+								}
+							} else if (event.message_type === 'tool_return_message') {
+								// Tool returned - log activity and emit info
+								const toolName = event.name || 'unknown';
+
+								// Try to get final args for this tool call
+								let toolArgs: ToolArgs = {};
+								const toolCallId = event.tool_call_id;
+								if (toolCallId && toolCallArgs.has(toolCallId)) {
+									try {
+										toolArgs = JSON.parse(toolCallArgs.get(toolCallId)!);
+									} catch {
+										// Args not valid JSON
+									}
+								}
+
+								// Log agent activity for non-send_message tools
+								if (toolName !== 'send_message') {
+									const activityType = mapToolNameToActivity(toolName);
 									if (activityType) {
 										logAgentActivity({
 											type: activityType,
-											details: formatToolActivityDetails(toolCall.name, toolArgs),
+											details: formatToolActivityDetails(toolName, toolArgs),
 											topicId,
 											agentName: 'gideon'
 										});
 									}
 
-									sendEvent('tool', {
-										name: toolCall.name,
-										status: 'called',
-										title: toolArgs.title as string || undefined,
-										query: toolArgs.query as string || undefined
-									});
-								}
-							} else if (event.message_type === 'tool_return_message') {
-								// Tool returned - emit enhanced info
-								if (event.tool_return !== 'Sent message successfully.') {
-									// Try to parse the result for enhanced info
-									let enhancedResult = event.tool_return;
-									let title: string | undefined;
-
-									try {
-										const parsed = typeof event.tool_return === 'string'
-											? JSON.parse(event.tool_return)
-											: event.tool_return;
-										if (parsed.title) title = parsed.title;
-										if (parsed.message) enhancedResult = parsed.message;
-									} catch (parseError) {
-										// Tool return is plain text, not JSON - expected behavior
+									if (event.tool_return !== 'Sent message successfully.') {
+										sendEvent('tool', {
+											name: toolName,
+											status: event.status,
+											result: typeof event.tool_return === 'string'
+												? event.tool_return.slice(0, 200)
+												: 'completed'
+										});
 									}
-
-									sendEvent('tool', {
-										name: 'tool_return',
-										result: enhancedResult,
-										title,
-										status: event.status
-									});
 								}
 							} else if (event.message_type === 'reasoning_message') {
-								// Internal reasoning - emit as thinking event
+								// Batch reasoning messages to avoid overwhelming the UI
 								if (event.reasoning) {
-									sendEvent('thinking', {
-										reasoning: event.reasoning
-									});
+									reasoningBuffer += event.reasoning;
+
+									// Debounce: send accumulated reasoning after 100ms of no new tokens
+									if (reasoningTimeout) clearTimeout(reasoningTimeout);
+									reasoningTimeout = setTimeout(() => {
+										if (reasoningBuffer) {
+											sendEvent('thinking', { reasoning: reasoningBuffer });
+											reasoningBuffer = '';
+										}
+									}, 100);
 								}
 							} else if (event.message_type === 'assistant_message') {
 								// Direct assistant message (older Letta format)
@@ -334,44 +359,16 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 									sendEvent('text', { text: newText });
 								}
 							}
-						} catch (parseError) {
+						} catch {
 							// Skip malformed JSON in stream - can happen with partial chunks
-							console.debug('Skipping malformed JSON in stream');
 						}
 					}
 				}
 
-				// Process any remaining buffer
-				if (buffer.trim() && buffer.startsWith('data: ')) {
-					const data = buffer.slice(6);
-					if (data !== '[DONE]') {
-						try {
-							const event = JSON.parse(data);
-							if (event.message_type === 'tool_call_message') {
-								const toolCall = event.tool_call;
-								if (toolCall?.name === 'send_message' && toolCall.arguments) {
-									try {
-										const args = JSON.parse(toolCall.arguments);
-										if (args.message && args.message.length > lastSentLength) {
-											const newText = args.message.slice(lastSentLength);
-											fullResponse = args.message;
-											sendEvent('text', { text: newText });
-										}
-									} catch (parseError) {
-										// Partial JSON at end of buffer - use custom parser
-										const extracted = extractMessageFromPartialJson(toolCall.arguments);
-										if (extracted && extracted.length > lastSentLength) {
-											fullResponse = extracted;
-											sendEvent('text', { text: extracted.slice(lastSentLength) });
-										}
-									}
-								}
-							}
-						} catch (parseError) {
-							// Buffer contained incomplete JSON - normal at stream end
-							console.debug('Buffer parse failed, likely incomplete data');
-						}
-					}
+				// Flush any remaining reasoning
+				if (reasoningTimeout) clearTimeout(reasoningTimeout);
+				if (reasoningBuffer) {
+					sendEvent('thinking', { reasoning: reasoningBuffer });
 				}
 
 				// Save assistant response to notebook
@@ -387,11 +384,15 @@ async function handleStreamingResponse(topicId: string, message: string, agentId
 				}
 
 				sendEvent('done', { notebook: getNotebook(topicId) });
+				isClosed = true;
 				controller.close();
 			} catch (error) {
 				console.error('Letta streaming error:', error);
-				sendEvent('error', { error: 'Streaming failed' });
-				controller.close();
+				if (!isClosed) {
+					sendEvent('error', { error: 'Streaming failed' });
+					isClosed = true;
+					controller.close();
+				}
 			}
 		}
 	});
