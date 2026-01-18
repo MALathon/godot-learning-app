@@ -27,15 +27,9 @@
       "level": "intermediate"
     }
   ],
-  "summary": [
-    "**Nodes are actors**: They live in the scene tree, have transforms, run code every frame, and handle game logic and user interaction",
-    "**Resources are data**: They store configuration, shared between objects by reference, and exist independently of any scene",
-    "**Sharing vs Instancing**: Use shared Resources for synchronized data, duplicate() for independent copies",
-    "**Architecture principle**: Nodes use Resources, but Resources don't know about Nodes—creating clean separation of data and behavior",
-    "**Performance advantage**: Resources don't participate in scene tree processing, making them efficient for shared data at scale"
-  ],
+  "summary": "• **Nodes are actors**: They live in the scene tree, have transforms, run code every frame, and handle game logic and user interaction\n• **Resources are data**: They store configuration, shared between objects by reference, and exist independently of any scene\n• **Sharing vs Instancing**: Use shared Resources for synchronized data, duplicate() for independent copies\n• **Architecture principle**: Nodes use Resources, but Resources don't know about Nodes—creating clean separation of data and behavior\n• **Performance advantage**: Resources don't participate in scene tree processing, making them efficient for shared data at scale",
   "nextSteps": "Now that you understand the Node-Resource distinction, explore **Scene Tree** to see how Nodes are organized hierarchically, and **Signals** to learn how Nodes communicate with each other. For data management, investigate **PackedScene** (scenes as Resources) and **custom Resource types** for building data-driven game systems. Your tic-tac-toe project is perfect for practicing this: create GameSettings and GameState Resources, then build Node-based UI that uses this shared data.",
   "generatedAt": "2026-01-18T05:23:33.936Z",
-  "generatedBy": "letta",
+  "generatedBy": "ai",
   "agentId": "agent-ada779c9-e856-4899-a5f5-02937e416a6d"
 }

@@ -27,15 +27,9 @@
       "level": "advanced"
     }
   ],
-  "summary": [
-    "**GDScript prioritizes game development workflows**: Fast iteration, editor integration, and predictable performance over raw computational speed",
-    "**Bytecode compilation with typed optimization**: Type hints unlock significant performance improvements by enabling specialized instructions and skipping runtime checks",
-    "**Reference counting memory model**: Deterministic cleanup without garbage collection pauses, but requires awareness of circular references",
-    "**Deep engine integration**: Signals, exports, and built-in types work at native speed because they're part of the engine, not script wrappers",
-    "**Performance follows game patterns**: Built-in methods, typed code, and memory reuse matter more than algorithmic cleverness"
-  ],
+  "summary": "• **GDScript prioritizes game development workflows**: Fast iteration, editor integration, and predictable performance over raw computational speed\n• **Bytecode compilation with typed optimization**: Type hints unlock significant performance improvements by enabling specialized instructions and skipping runtime checks\n• **Reference counting memory model**: Deterministic cleanup without garbage collection pauses, but requires awareness of circular references\n• **Deep engine integration**: Signals, exports, and built-in types work at native speed because they're part of the engine, not script wrappers\n• **Performance follows game patterns**: Built-in methods, typed code, and memory reuse matter more than algorithmic cleverness",
   "nextSteps": "Now that you understand GDScript's internals, explore **Performance Profiling** to identify real bottlenecks in your code, and **Custom Resources** to see how GDScript's type system extends to data modeling. Study **Godot's built-in data structures** (PackedArrays, Dictionary optimizations) to write more efficient code. For advanced users, investigate **GDExtension** to understand when and how to drop down to C++ for performance-critical code. Your tic-tac-toe project is perfect for practicing: add type hints throughout, profile different algorithms for win detection, and experiment with @export annotations to create a designer-friendly interface.",
   "generatedAt": "2026-01-18T05:27:50.615Z",
-  "generatedBy": "letta",
+  "generatedBy": "ai",
   "agentId": "agent-ada779c9-e856-4899-a5f5-02937e416a6d"
 }

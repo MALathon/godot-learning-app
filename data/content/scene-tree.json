@@ -27,15 +27,9 @@
       "level": "advanced"
     }
   ],
-  "summary": [
-    "**Scene tree is the backbone**: Every node has one parent and potentially many children, creating a predictable hierarchy that determines processing order and relationships",
-    "**Transform inheritance flows down**: Moving, rotating, or scaling a parent automatically affects all children, enabling complex objects built from simple parts",
-    "**Scenes enable composition**: Reusable subtrees that can be instantiated anywhere, promoting modular design and code reuse over inheritance",
-    "**SceneTree manages global state**: The singleton that runs your game, handles lifecycle events, and provides access to scene management and global operations",
-    "**Groups provide cross-cutting organization**: Tag-based collections that let you organize nodes by functionality rather than hierarchy, enabling efficient mass operations"
-  ],
+  "summary": "• **Scene tree is the backbone**: Every node has one parent and potentially many children, creating a predictable hierarchy that determines processing order and relationships\n• **Transform inheritance flows down**: Moving, rotating, or scaling a parent automatically affects all children, enabling complex objects built from simple parts\n• **Scenes enable composition**: Reusable subtrees that can be instantiated anywhere, promoting modular design and code reuse over inheritance\n• **SceneTree manages global state**: The singleton that runs your game, handles lifecycle events, and provides access to scene management and global operations\n• **Groups provide cross-cutting organization**: Tag-based collections that let you organize nodes by functionality rather than hierarchy, enabling efficient mass operations",
   "nextSteps": "Now that you understand how Godot organizes your game world, explore **Signals** to learn how nodes communicate across the tree hierarchy without tight coupling. Study **Node lifecycle** more deeply to understand when different events fire and how to optimize initialization. For advanced users, investigate **custom scene management** patterns and **node pooling** for performance. Your tic-tac-toe project is perfect for practicing: implement the board as a scene containing cell scenes, use groups to manage winning combinations, and experiment with transform inheritance for animations.",
   "generatedAt": "2026-01-18T05:25:55.853Z",
-  "generatedBy": "letta",
+  "generatedBy": "ai",
   "agentId": "agent-ada779c9-e856-4899-a5f5-02937e416a6d"
 }

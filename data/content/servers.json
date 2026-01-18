@@ -27,15 +27,9 @@
       "level": "advanced"
     }
   ],
-  "summary": [
-    "**Servers are the engine beneath Nodes**: All visual, physics, and audio operations ultimately route through specialized Server singletons that handle low-level platform-specific work",
-    "**Direct Server access enables high-performance operations**: Bypass Node overhead for bulk operations, custom effects, and performance-critical code using RIDs",
-    "**Performance monitoring requires Server-level metrics**: Use Performance singleton to identify bottlenecks in rendering, physics, audio, and other Server subsystems",
-    "**Cross-platform compatibility comes from Server abstraction**: The same high-level Server commands translate to Vulkan, OpenGL, Metal, DirectX, and other platform-specific APIs automatically",
-    "**Choose the right abstraction level**: Use Nodes for typical game development, direct Server access for performance optimization and advanced features"
-  ],
+  "summary": "• **Servers are the engine beneath Nodes**: All visual, physics, and audio operations ultimately route through specialized Server singletons that handle low-level platform-specific work\n• **Direct Server access enables high-performance operations**: Bypass Node overhead for bulk operations, custom effects, and performance-critical code using RIDs\n• **Performance monitoring requires Server-level metrics**: Use Performance singleton to identify bottlenecks in rendering, physics, audio, and other Server subsystems\n• **Cross-platform compatibility comes from Server abstraction**: The same high-level Server commands translate to Vulkan, OpenGL, Metal, DirectX, and other platform-specific APIs automatically\n• **Choose the right abstraction level**: Use Nodes for typical game development, direct Server access for performance optimization and advanced features",
   "nextSteps": "With Server architecture understanding, explore **Performance Optimization** techniques that leverage direct Server access, and **Custom Resource Types** that can store Server RIDs for persistent performance gains. Investigate **Editor Plugins** which often require direct Server manipulation for custom tools. For your tic-tac-toe project, experiment with PhysicsServer2D for efficient click detection across multiple cells, and consider RenderingServer for custom visual effects during winning animations. The **Scene System** topic will show how Servers and Nodes work together in Godot's complete architecture.",
   "generatedAt": "2026-01-18T05:25:41.385Z",
-  "generatedBy": "letta",
+  "generatedBy": "ai",
   "agentId": "agent-ada779c9-e856-4899-a5f5-02937e416a6d"
 }

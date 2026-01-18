@@ -27,15 +27,9 @@
       "level": "advanced"
     }
   ],
-  "summary": [
-    "Signals implement the observer pattern, enabling loose coupling where emitters broadcast events without knowing who's listening",
-    "Custom signals define your game's communication vocabulary, carrying exactly the data listeners need to make decisions",
-    "Connections can be made in the editor for static relationships or in code for dynamic, conditional communication",
-    "Advanced patterns like signal chaining, broadcasting through singletons, and conditional responses scale from simple to complex systems",
-    "Godot's built-in signals provide deep integration with engine systems, offering ready-made communication channels for common game events"
-  ],
+  "summary": "• Signals implement the observer pattern, enabling loose coupling where emitters broadcast events without knowing who's listening\n• Custom signals define your game's communication vocabulary, carrying exactly the data listeners need to make decisions\n• Connections can be made in the editor for static relationships or in code for dynamic, conditional communication\n• Advanced patterns like signal chaining, broadcasting through singletons, and conditional responses scale from simple to complex systems\n• Godot's built-in signals provide deep integration with engine systems, offering ready-made communication channels for common game events",
   "nextSteps": "Now that you understand signals, explore how they integrate with the Scene Tree hierarchy and Game Loop processing. Study the Observer pattern in other systems like UI frameworks. Then examine how signals enable Component Architecture and Composition patterns for building modular game systems.",
   "generatedAt": "2026-01-18T05:22:21.502Z",
-  "generatedBy": "letta",
+  "generatedBy": "ai",
   "agentId": "agent-ada779c9-e856-4899-a5f5-02937e416a6d"
 }
