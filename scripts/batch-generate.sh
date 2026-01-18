@@ -11,15 +11,16 @@ echo "Base URL: $BASE_URL"
 echo "Topics: ${#TOPICS[@]}"
 echo ""
 
-# Phase 1: Generate prose content for all topics
-echo "=== PHASE 1: Generating Prose Content ==="
+# Phase 1: Generate prose content for all topics using Letta
+echo "=== PHASE 1: Generating Prose Content (via Letta) ==="
 for topic in "${TOPICS[@]}"; do
     echo ""
     echo ">>> Generating prose for: $topic"
-    response=$(curl -s -X POST "$BASE_URL/api/content/generate" \
+    # Use Letta-based generation (doesn't require separate API key)
+    response=$(curl -s -X POST "$BASE_URL/api/content/generate-letta" \
         -H "Content-Type: application/json" \
         -d "{\"topicId\": \"$topic\", \"regenerate\": false}" \
-        --max-time 120)
+        --max-time 180)
 
     if echo "$response" | grep -q '"success":true'; then
         sections=$(echo "$response" | grep -o '"sectionsCount":[0-9]*' | cut -d: -f2)
