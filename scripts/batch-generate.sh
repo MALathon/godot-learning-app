@@ -11,13 +11,12 @@ echo "Base URL: $BASE_URL"
 echo "Topics: ${#TOPICS[@]}"
 echo ""
 
-# Phase 1: Generate prose content for all topics using Letta
-echo "=== PHASE 1: Generating Prose Content (via Letta) ==="
+# Phase 1: Generate prose content for all topics using Anthropic API
+echo "=== PHASE 1: Generating Prose Content ==="
 for topic in "${TOPICS[@]}"; do
     echo ""
     echo ">>> Generating prose for: $topic"
-    # Use Letta-based generation (doesn't require separate API key)
-    response=$(curl -s -X POST "$BASE_URL/api/content/generate-letta" \
+    response=$(curl -s -X POST "$BASE_URL/api/content/generate" \
         -H "Content-Type: application/json" \
         -d "{\"topicId\": \"$topic\", \"regenerate\": false}" \
         --max-time 180)
