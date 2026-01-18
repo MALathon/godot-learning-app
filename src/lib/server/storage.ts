@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { env } from '$env/dynamic/private';
 
 const DATA_DIR = join(process.cwd(), 'data');
 const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
@@ -50,16 +51,23 @@ const DEFAULT_SETTINGS: Settings = {
 
 export function getSettings(): Settings {
 	ensureDataDirs();
-	if (!existsSync(SETTINGS_FILE)) {
-		return DEFAULT_SETTINGS;
+	let settings = DEFAULT_SETTINGS;
+
+	if (existsSync(SETTINGS_FILE)) {
+		try {
+			const data = readFileSync(SETTINGS_FILE, 'utf-8');
+			settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+		} catch (error) {
+			console.error(`Failed to read settings file: ${error instanceof Error ? error.message : error}`);
+		}
 	}
-	try {
-		const data = readFileSync(SETTINGS_FILE, 'utf-8');
-		return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
-	} catch (error) {
-		console.error(`Failed to read settings file: ${error instanceof Error ? error.message : error}`);
-		return DEFAULT_SETTINGS;
+
+	// Fallback to environment variable if no API key in settings
+	if (!settings.apiKey && env.ANTHROPIC_API_KEY) {
+		settings.apiKey = env.ANTHROPIC_API_KEY;
 	}
+
+	return settings;
 }
 
 export function saveSettings(settings: Partial<Settings>): Settings {

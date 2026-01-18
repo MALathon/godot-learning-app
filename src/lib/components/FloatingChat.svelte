@@ -38,6 +38,31 @@
 	let goalInput = $state('');
 	let savingGoal = $state(false);
 
+	// Telemetry state
+	interface TelemetryData {
+		status: {
+			running: boolean;
+			paused: boolean;
+			lastRun: string | null;
+			currentTopic: string | null;
+			totalRuns: number;
+		};
+		config: {
+			hasApiKey: boolean;
+			lettaAvailable: boolean;
+			agents: { gideon: string | null; curator: string | null };
+		};
+		telemetry: {
+			recentActivity: AgentActivity[];
+			notifications: { total: number; unseen: number };
+			contentGaps: { high: number; medium: number; low: number };
+			topicsNeedingWork: Array<{ topicId: string; priority: string; recommendations: string[] }>;
+		};
+	}
+	let telemetry = $state<TelemetryData | null>(null);
+	let telemetryLoading = $state(false);
+	let showTelemetry = $state(false);
+
 	// Context-aware state
 	const hasTopicContext = $derived(!!topic);
 	const contextTitle = $derived(topic?.title ?? 'General');
@@ -173,6 +198,49 @@
 			console.error('Failed to save learning goal:', e);
 		} finally {
 			savingGoal = false;
+		}
+	}
+
+	async function loadTelemetry() {
+		telemetryLoading = true;
+		try {
+			const response = await fetch('/api/curation-control');
+			if (response.ok) {
+				telemetry = await response.json();
+			}
+		} catch (e) {
+			console.error('Failed to load telemetry:', e);
+		} finally {
+			telemetryLoading = false;
+		}
+	}
+
+	async function controlCuration(action: 'start' | 'pause' | 'resume' | 'stop') {
+		try {
+			const response = await fetch('/api/curation-control', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action })
+			});
+			if (response.ok) {
+				await loadTelemetry();
+			}
+		} catch (e) {
+			console.error('Failed to control curation:', e);
+		}
+	}
+
+	async function triggerTopicCuration(topicId: string) {
+		try {
+			await fetch('/api/content/fill-gaps', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ topicId, mode: 'single' })
+			});
+			await loadTelemetry();
+			await loadNotifications();
+		} catch (e) {
+			console.error('Failed to trigger curation:', e);
 		}
 	}
 
@@ -332,13 +400,19 @@
 	}
 
 	onMount(async () => {
-		// Always load notifications and goal
+		// Always load notifications, goal, and telemetry
 		loadNotifications();
 		loadLearningGoal();
+		loadTelemetry();
+
+		// Refresh telemetry periodically
+		const telemetryInterval = setInterval(loadTelemetry, 30000);
 
 		if (hasTopicContext) {
 			await Promise.all([loadNotebook(), loadCuratedContent()]);
 		}
+
+		return () => clearInterval(telemetryInterval);
 	});
 
 	$effect(() => {
@@ -646,6 +720,14 @@
 						{totalCurated} curated
 					</span>
 				{/if}
+				<button
+					class="header-btn telemetry-btn"
+					class:active={showTelemetry}
+					onclick={() => { showTelemetry = !showTelemetry; if (showTelemetry) loadTelemetry(); }}
+					title="Agent telemetry"
+				>
+					<span class="telemetry-icon">{telemetry?.config?.lettaAvailable ? '●' : '○'}</span>
+				</button>
 				<button class="header-btn close-btn" onclick={togglePanel} title="Close">
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M6 9l6 6 6-6"/>
@@ -683,6 +765,74 @@
 				</button>
 			{/if}
 		</div>
+
+		<!-- Telemetry Panel -->
+		{#if showTelemetry && telemetry}
+			<div class="telemetry-panel">
+				<div class="telemetry-header">
+					<span class="telemetry-title">Agent Status</span>
+					<div class="telemetry-controls">
+						{#if telemetry.status.paused}
+							<button class="control-btn resume" onclick={() => controlCuration('resume')}>Resume</button>
+						{:else if telemetry.status.running}
+							<button class="control-btn pause" onclick={() => controlCuration('pause')}>Pause</button>
+						{:else}
+							<button class="control-btn start" onclick={() => controlCuration('start')}>Start</button>
+						{/if}
+						<button class="control-btn stop" onclick={() => controlCuration('stop')} disabled={!telemetry.status.running}>Stop</button>
+					</div>
+				</div>
+
+				<div class="telemetry-stats">
+					<div class="stat">
+						<span class="stat-label">Letta</span>
+						<span class="stat-value" class:online={telemetry.config.lettaAvailable} class:offline={!telemetry.config.lettaAvailable}>
+							{telemetry.config.lettaAvailable ? 'Online' : 'Offline'}
+						</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">API Key</span>
+						<span class="stat-value" class:online={telemetry.config.hasApiKey} class:offline={!telemetry.config.hasApiKey}>
+							{telemetry.config.hasApiKey ? 'Set' : 'Missing'}
+						</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Runs</span>
+						<span class="stat-value">{telemetry.status.totalRuns}</span>
+					</div>
+				</div>
+
+				<div class="telemetry-gaps">
+					<span class="gaps-label">Content Gaps:</span>
+					<span class="gap-badge high">{telemetry.telemetry.contentGaps.high} high</span>
+					<span class="gap-badge medium">{telemetry.telemetry.contentGaps.medium} med</span>
+					<span class="gap-badge low">{telemetry.telemetry.contentGaps.low} low</span>
+				</div>
+
+				{#if telemetry.telemetry.topicsNeedingWork.length > 0}
+					<div class="topics-needing-work">
+						<span class="work-label">Topics needing content:</span>
+						<div class="work-list">
+							{#each telemetry.telemetry.topicsNeedingWork.slice(0, 3) as topic}
+								<button class="work-item" onclick={() => triggerTopicCuration(topic.topicId)}>
+									<span class="work-topic">{topic.topicId}</span>
+									<span class="work-priority" class:high={topic.priority === 'high'}>{topic.priority}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if telemetry.status.lastRun}
+					<div class="last-run">
+						Last run: {formatTimeAgo(telemetry.status.lastRun)}
+						{#if telemetry.status.currentTopic}
+							on {telemetry.status.currentTopic}
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- View Toggle -->
 		<div class="view-toggle">
@@ -1375,6 +1525,217 @@
 	.goal-btn.cancel:hover {
 		background: rgba(255, 255, 255, 0.05);
 		color: rgba(255, 255, 255, 0.8);
+	}
+
+	/* Telemetry Button */
+	.telemetry-btn {
+		position: relative;
+	}
+
+	.telemetry-btn.active {
+		background: rgba(16, 185, 129, 0.15);
+	}
+
+	.telemetry-icon {
+		font-size: 10px;
+	}
+
+	/* Telemetry Panel */
+	.telemetry-panel {
+		padding: 10px 12px;
+		background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		font-size: 11px;
+	}
+
+	.telemetry-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10px;
+	}
+
+	.telemetry-title {
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.8);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.telemetry-controls {
+		display: flex;
+		gap: 4px;
+	}
+
+	.control-btn {
+		padding: 4px 10px;
+		border-radius: 4px;
+		font-size: 10px;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s;
+		border: none;
+	}
+
+	.control-btn.start {
+		background: rgba(16, 185, 129, 0.2);
+		color: #6ee7b7;
+	}
+
+	.control-btn.start:hover {
+		background: rgba(16, 185, 129, 0.3);
+	}
+
+	.control-btn.pause {
+		background: rgba(251, 191, 36, 0.2);
+		color: #fcd34d;
+	}
+
+	.control-btn.pause:hover {
+		background: rgba(251, 191, 36, 0.3);
+	}
+
+	.control-btn.resume {
+		background: rgba(99, 102, 241, 0.2);
+		color: #a5b4fc;
+	}
+
+	.control-btn.resume:hover {
+		background: rgba(99, 102, 241, 0.3);
+	}
+
+	.control-btn.stop {
+		background: rgba(239, 68, 68, 0.15);
+		color: #fca5a5;
+	}
+
+	.control-btn.stop:hover:not(:disabled) {
+		background: rgba(239, 68, 68, 0.25);
+	}
+
+	.control-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.telemetry-stats {
+		display: flex;
+		gap: 16px;
+		margin-bottom: 8px;
+	}
+
+	.stat {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.stat-label {
+		font-size: 9px;
+		color: rgba(255, 255, 255, 0.4);
+		text-transform: uppercase;
+	}
+
+	.stat-value {
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.stat-value.online {
+		color: #6ee7b7;
+	}
+
+	.stat-value.offline {
+		color: #fca5a5;
+	}
+
+	.telemetry-gaps {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 8px;
+	}
+
+	.gaps-label {
+		color: rgba(255, 255, 255, 0.5);
+	}
+
+	.gap-badge {
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 9px;
+		font-weight: 600;
+	}
+
+	.gap-badge.high {
+		background: rgba(239, 68, 68, 0.2);
+		color: #fca5a5;
+	}
+
+	.gap-badge.medium {
+		background: rgba(251, 191, 36, 0.2);
+		color: #fcd34d;
+	}
+
+	.gap-badge.low {
+		background: rgba(16, 185, 129, 0.2);
+		color: #6ee7b7;
+	}
+
+	.topics-needing-work {
+		margin-bottom: 8px;
+	}
+
+	.work-label {
+		display: block;
+		color: rgba(255, 255, 255, 0.5);
+		margin-bottom: 4px;
+	}
+
+	.work-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	.work-item {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		background: rgba(255, 255, 255, 0.05);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.work-item:hover {
+		background: rgba(99, 102, 241, 0.15);
+		border-color: rgba(99, 102, 241, 0.3);
+	}
+
+	.work-topic {
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.work-priority {
+		font-size: 8px;
+		padding: 1px 4px;
+		border-radius: 3px;
+		background: rgba(251, 191, 36, 0.2);
+		color: #fcd34d;
+	}
+
+	.work-priority.high {
+		background: rgba(239, 68, 68, 0.2);
+		color: #fca5a5;
+	}
+
+	.last-run {
+		color: rgba(255, 255, 255, 0.4);
+		font-size: 10px;
+		font-style: italic;
 	}
 
 	/* View Toggle */
