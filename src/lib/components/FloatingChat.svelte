@@ -58,6 +58,13 @@
 			contentGaps: { high: number; medium: number; low: number };
 			topicsNeedingWork: Array<{ topicId: string; priority: string; recommendations: string[] }>;
 		};
+		usage?: {
+			totalCost: number;
+			todayCost: number;
+			totalInputTokens: number;
+			totalOutputTokens: number;
+			sessionStart: string;
+		};
 	}
 	let telemetry = $state<TelemetryData | null>(null);
 	let telemetryLoading = $state(false);
@@ -801,6 +808,29 @@
 						<span class="stat-value">{telemetry.status.totalRuns}</span>
 					</div>
 				</div>
+
+				{#if telemetry.usage}
+					<div class="cost-section">
+						<div class="cost-header">
+							<span class="cost-title">API Cost</span>
+							<button class="reset-btn" onclick={() => controlCuration('reset-usage')} title="Reset usage stats">↺</button>
+						</div>
+						<div class="cost-stats">
+							<div class="cost-item">
+								<span class="cost-label">Today</span>
+								<span class="cost-value">${telemetry.usage.todayCost.toFixed(4)}</span>
+							</div>
+							<div class="cost-item">
+								<span class="cost-label">Total</span>
+								<span class="cost-value">${telemetry.usage.totalCost.toFixed(4)}</span>
+							</div>
+							<div class="cost-item">
+								<span class="cost-label">Tokens</span>
+								<span class="cost-value tokens">{((telemetry.usage.totalInputTokens + telemetry.usage.totalOutputTokens) / 1000).toFixed(1)}k</span>
+							</div>
+						</div>
+					</div>
+				{/if}
 
 				<div class="telemetry-gaps">
 					<span class="gaps-label">Content Gaps:</span>
@@ -1647,6 +1677,75 @@
 
 	.stat-value.offline {
 		color: #fca5a5;
+	}
+
+	/* Cost Section */
+	.cost-section {
+		margin: 10px 0;
+		padding: 8px 10px;
+		background: rgba(0, 0, 0, 0.2);
+		border-radius: 6px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	.cost-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.cost-title {
+		font-size: 10px;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.6);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.reset-btn {
+		background: transparent;
+		border: none;
+		color: rgba(255, 255, 255, 0.4);
+		cursor: pointer;
+		font-size: 12px;
+		padding: 2px 4px;
+		border-radius: 4px;
+		transition: all 0.15s;
+	}
+
+	.reset-btn:hover {
+		background: rgba(255, 255, 255, 0.1);
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	.cost-stats {
+		display: flex;
+		gap: 12px;
+	}
+
+	.cost-item {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.cost-label {
+		font-size: 9px;
+		color: rgba(255, 255, 255, 0.4);
+		text-transform: uppercase;
+	}
+
+	.cost-value {
+		font-weight: 700;
+		font-size: 13px;
+		color: #fbbf24;
+		font-family: 'SF Mono', 'Fira Code', monospace;
+	}
+
+	.cost-value.tokens {
+		color: #a5b4fc;
+		font-size: 11px;
 	}
 
 	.telemetry-gaps {

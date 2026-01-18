@@ -3,7 +3,9 @@ import {
 	getRecentAgentActivity,
 	getNotifications,
 	analyzeContentGaps,
-	getSettings
+	getSettings,
+	getUsageStats,
+	resetUsageStats
 } from '$lib/server/storage';
 import { topics } from '$lib/data/topics';
 import { LETTA_URL, getGideonAgentId, getCuratorAgentId } from '$lib/server/letta';
@@ -44,6 +46,9 @@ export const GET: RequestHandler = async () => {
 	const notifications = getNotifications();
 	const unseenCount = notifications.notifications.filter(n => !n.seen).length;
 
+	// Get usage/cost stats
+	const usageStats = getUsageStats();
+
 	// Analyze content gaps summary
 	const allTopicIds = topics.map(t => t.id);
 	const gapsAnalysis = allTopicIds.map(id => analyzeContentGaps(id));
@@ -77,6 +82,14 @@ export const GET: RequestHandler = async () => {
 			topicsNeedingWork: gapsAnalysis
 				.filter(g => g.priority !== 'low')
 				.map(g => ({ topicId: g.topicId, priority: g.priority, recommendations: g.recommendations }))
+		},
+		usage: {
+			totalCost: usageStats.totalCost,
+			todayCost: usageStats.todayCost,
+			totalInputTokens: usageStats.totalInputTokens,
+			totalOutputTokens: usageStats.totalOutputTokens,
+			recentEntries: usageStats.entries.slice(0, 10),
+			sessionStart: usageStats.sessionStart
 		},
 		errors: curationState.errors.slice(0, 5)
 	});
@@ -155,7 +168,14 @@ export const POST: RequestHandler = async ({ request }) => {
 				status: curationState
 			});
 
+		case 'reset-usage':
+			resetUsageStats();
+			return json({
+				success: true,
+				message: 'Usage stats reset'
+			});
+
 		default:
-			return json({ error: 'Unknown action. Use: start, pause, resume, stop, trigger' }, { status: 400 });
+			return json({ error: 'Unknown action. Use: start, pause, resume, stop, trigger, reset-usage' }, { status: 400 });
 	}
 };

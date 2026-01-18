@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getSettings, saveTopicContent, getTopicContent, getNotebook, logAgentActivity, addNotification } from '$lib/server/storage';
+import { getSettings, saveTopicContent, getTopicContent, getNotebook, logAgentActivity, addNotification, logUsage } from '$lib/server/storage';
 import { topics } from '$lib/data/topics';
 import type { RequestHandler } from './$types';
 
@@ -154,6 +154,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const data = await response.json();
+
+		// Log API usage for cost tracking
+		if (data.usage) {
+			logUsage({
+				model: settings.model,
+				inputTokens: data.usage.input_tokens || 0,
+				outputTokens: data.usage.output_tokens || 0,
+				source: 'prose',
+				topicId
+			});
+		}
 
 		// Extract the text content
 		const textContent = data.content

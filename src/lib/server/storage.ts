@@ -959,5 +959,130 @@ export function saveLearningGoal(goal: string): LearningGoal {
 	return data;
 }
 
+// =============================================================================
+// API Usage Tracking (cost monitoring)
+// =============================================================================
+
+const USAGE_FILE = join(DATA_DIR, 'usage.json');
+
+// Claude pricing per 1M tokens (as of Jan 2025)
+const PRICING = {
+	'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+	'claude-opus-4-20250514': { input: 15.0, output: 75.0 },
+	'claude-haiku-3-20250307': { input: 0.25, output: 1.25 },
+	// Fallback for unknown models
+	default: { input: 3.0, output: 15.0 }
+} as const;
+
+export interface UsageEntry {
+	id: string;
+	timestamp: string;
+	model: string;
+	inputTokens: number;
+	outputTokens: number;
+	cost: number;
+	source: 'chat' | 'prose' | 'curation' | 'letta';
+	topicId?: string;
+}
+
+export interface UsageStats {
+	entries: UsageEntry[];
+	totalCost: number;
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	todayCost: number;
+	sessionStart: string;
+}
+
+const MAX_USAGE_ENTRIES = 500;
+
+function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
+	const pricing = PRICING[model as keyof typeof PRICING] || PRICING.default;
+	const inputCost = (inputTokens / 1_000_000) * pricing.input;
+	const outputCost = (outputTokens / 1_000_000) * pricing.output;
+	return Math.round((inputCost + outputCost) * 10000) / 10000; // Round to 4 decimal places
+}
+
+export function logUsage(entry: Omit<UsageEntry, 'id' | 'timestamp' | 'cost'>): UsageEntry {
+	ensureDataDirs();
+
+	const cost = calculateCost(entry.model, entry.inputTokens, entry.outputTokens);
+	const fullEntry: UsageEntry = {
+		...entry,
+		id: `usage-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+		timestamp: new Date().toISOString(),
+		cost
+	};
+
+	let stats = getUsageStats();
+	stats.entries.unshift(fullEntry);
+	stats.totalCost += cost;
+	stats.totalInputTokens += entry.inputTokens;
+	stats.totalOutputTokens += entry.outputTokens;
+
+	// Keep only recent entries
+	if (stats.entries.length > MAX_USAGE_ENTRIES) {
+		stats.entries = stats.entries.slice(0, MAX_USAGE_ENTRIES);
+	}
+
+	try {
+		writeFileSync(USAGE_FILE, JSON.stringify(stats, null, 2));
+	} catch (error) {
+		console.error(`Failed to save usage: ${error instanceof Error ? error.message : error}`);
+	}
+
+	return fullEntry;
+}
+
+export function getUsageStats(): UsageStats {
+	ensureDataDirs();
+
+	const defaultStats: UsageStats = {
+		entries: [],
+		totalCost: 0,
+		totalInputTokens: 0,
+		totalOutputTokens: 0,
+		todayCost: 0,
+		sessionStart: new Date().toISOString()
+	};
+
+	if (!existsSync(USAGE_FILE)) {
+		return defaultStats;
+	}
+
+	try {
+		const data = readFileSync(USAGE_FILE, 'utf-8');
+		const stats: UsageStats = JSON.parse(data);
+
+		// Calculate today's cost
+		const today = new Date().toISOString().split('T')[0];
+		stats.todayCost = stats.entries
+			.filter(e => e.timestamp.startsWith(today))
+			.reduce((sum, e) => sum + e.cost, 0);
+
+		return stats;
+	} catch (error) {
+		console.error(`Failed to read usage stats: ${error instanceof Error ? error.message : error}`);
+		return defaultStats;
+	}
+}
+
+export function resetUsageStats(): void {
+	ensureDataDirs();
+	const freshStats: UsageStats = {
+		entries: [],
+		totalCost: 0,
+		totalInputTokens: 0,
+		totalOutputTokens: 0,
+		todayCost: 0,
+		sessionStart: new Date().toISOString()
+	};
+	try {
+		writeFileSync(USAGE_FILE, JSON.stringify(freshStats, null, 2));
+	} catch (error) {
+		console.error(`Failed to reset usage stats: ${error instanceof Error ? error.message : error}`);
+	}
+}
+
 // Export sanitizeTopicId for use in API routes
 export { sanitizeTopicId };
