@@ -1,0 +1,113 @@
+{
+  "notifications": [
+    {
+      "type": "prose",
+      "topicId": "state-machines",
+      "title": "New content: State Machines",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768714126751-vxvgv2y",
+      "timestamp": "2026-01-18T05:28:46.751Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "gdscript-internals",
+      "title": "New content: GDScript Internals",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768714070615-fivtp5c",
+      "timestamp": "2026-01-18T05:27:50.615Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "composition",
+      "title": "New content: Composition Over Inheritance",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768714067354-trzuhza",
+      "timestamp": "2026-01-18T05:27:47.354Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "gdscript-internals",
+      "title": "New content: GDScript Internals",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713985079-kh38686",
+      "timestamp": "2026-01-18T05:26:25.079Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "scene-tree",
+      "title": "New content: Scene Trees & Hierarchies",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713955853-brs0kx6",
+      "timestamp": "2026-01-18T05:25:55.853Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "servers",
+      "title": "New content: Server Architecture",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713941385-yzhgjd9",
+      "timestamp": "2026-01-18T05:25:41.385Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "scene-tree",
+      "title": "New content: Scene Trees & Hierarchies",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713936816-amrrl60",
+      "timestamp": "2026-01-18T05:25:36.816Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "game-loop",
+      "title": "New content: The Game Loop",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713933067-hk7kotf",
+      "timestamp": "2026-01-18T05:25:33.067Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "servers",
+      "title": "New content: Server Architecture",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713889431-dzz4p1n",
+      "timestamp": "2026-01-18T05:24:49.431Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "nodes-resources",
+      "title": "New content: Nodes vs Resources",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713813936-uqhi5m7",
+      "timestamp": "2026-01-18T05:23:33.936Z",
+      "seen": false
+    },
+    {
+      "type": "prose",
+      "topicId": "signals",
+      "title": "New content: Signals (Observer Pattern)",
+      "description": "Generated 5 educational sections",
+      "id": "notif-1768713741502-v6esnt2",
+      "timestamp": "2026-01-18T05:22:21.502Z",
+      "seen": true
+    },
+    {
+      "type": "prose",
+      "topicId": "scene-tree",
+      "title": "New content: Scene Trees & Hierarchies",
+      "description": "Generated 1 educational sections",
+      "id": "notif-1768713579674-r7wjeqs",
+      "timestamp": "2026-01-18T05:19:39.674Z",
+      "seen": true
+    }
+  ],
+  "lastSeen": "2026-01-18T05:23:09.662Z"
+}

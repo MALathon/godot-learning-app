@@ -5,12 +5,13 @@
 	import type { PageData } from './$types';
 	import type { TopicProgress } from '$lib/server/storage';
 
-	import type { CodeExample, Resource } from '$lib/data/topics';
+	import type { CodeExample, Resource, TopicContent } from '$lib/data/topics';
 
 	// Extended type to include server data that may not be in auto-generated types
 	type ExtendedPageData = PageData & {
 		extension?: { resources?: Resource[]; codeExamples?: CodeExample[] };
 		serverProgress?: TopicProgress;
+		generatedContent?: TopicContent | null;
 	};
 
 	let { data }: { data: ExtendedPageData } = $props();
@@ -19,12 +20,36 @@
 	// extension comes from +page.server.ts
 	const extension = $derived(data.extension);
 	const progress = $derived(progressStore.getTopicProgress(topic.id));
+	// Prefer AI-generated content from storage, fallback to hardcoded content in topics.ts
+	const content = $derived((data.generatedContent || topic.content) as TopicContent | undefined);
+	const hasContent = $derived(!!content?.introduction || !!content?.sections?.length);
 
 	// Merge static and extended resources/examples
 	const allResources = $derived([...topic.resources, ...(extension?.resources || [])]);
 	const allCodeExamples = $derived([...topic.codeExamples, ...(extension?.codeExamples || [])]);
 
-	let activeTab = $state<'content' | 'exercises'>('content');
+	let activeTab = $state<'read' | 'reference' | 'exercises'>('read');
+
+	// Simple markdown to HTML converter
+	function renderMarkdown(text: string): string {
+		if (!text) return '';
+		return text
+			// Code blocks with language
+			.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
+			// Inline code
+			.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+			// Bold
+			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+			// Italic
+			.replace(/\*([^*]+)\*/g, '<em>$1</em>')
+			// Paragraphs (double newlines)
+			.replace(/\n\n/g, '</p><p>')
+			// Single newlines in paragraphs
+			.replace(/\n/g, '<br>')
+			// Wrap in paragraph
+			.replace(/^/, '<p>')
+			.replace(/$/, '</p>');
+	}
 
 	onMount(() => {
 		progressStore.markTopicVisited(topic.id);
@@ -71,12 +96,21 @@
 	</header>
 
 	<nav class="tabs">
+		{#if hasContent}
+			<button
+				class="tab"
+				class:active={activeTab === 'read'}
+				onclick={() => activeTab = 'read'}
+			>
+				Read
+			</button>
+		{/if}
 		<button
 			class="tab"
-			class:active={activeTab === 'content'}
-			onclick={() => activeTab = 'content'}
+			class:active={activeTab === 'reference'}
+			onclick={() => activeTab = 'reference'}
 		>
-			Content
+			Reference
 		</button>
 		<button
 			class="tab"
@@ -90,7 +124,59 @@
 		</button>
 	</nav>
 
-	{#if activeTab === 'content'}
+	{#if activeTab === 'read' && hasContent && content}
+		<!-- Book-like reading content -->
+		<article class="prose-content">
+			{#if content.introduction}
+				<div class="introduction">
+					{@html renderMarkdown(content.introduction)}
+				</div>
+			{/if}
+
+			{#each content.sections || [] as section}
+				<section class="content-section">
+					<h2>
+						{section.title}
+						{#if section.level}
+							<span class="level-badge" class:beginner={section.level === 'beginner'} class:intermediate={section.level === 'intermediate'} class:advanced={section.level === 'advanced'}>
+								{section.level}
+							</span>
+						{/if}
+					</h2>
+					<div class="section-content">
+						{@html renderMarkdown(section.content)}
+					</div>
+				</section>
+			{/each}
+
+			{#if content.summary}
+				<section class="summary-section">
+					<h2>Summary</h2>
+					<div class="summary-card">
+						{@html renderMarkdown(content.summary)}
+					</div>
+				</section>
+			{/if}
+
+			{#if content.nextSteps}
+				<section class="next-steps-section">
+					<h2>What's Next?</h2>
+					<div class="next-steps-card">
+						{@html renderMarkdown(content.nextSteps)}
+					</div>
+				</section>
+			{/if}
+
+			{#if content.generatedBy === 'ai'}
+				<div class="content-meta">
+					<span class="ai-badge">AI Generated</span>
+					{#if content.generatedAt}
+						<span class="generated-date">Generated {new Date(content.generatedAt).toLocaleDateString()}</span>
+					{/if}
+				</div>
+			{/if}
+		</article>
+	{:else if activeTab === 'reference' || (activeTab === 'read' && !hasContent)}
 		<div class="content">
 			<section class="key-points">
 				<h2>Key Concepts</h2>
@@ -446,5 +532,160 @@
 	.nav-title {
 		font-weight: 500;
 		color: var(--text-primary);
+	}
+
+	/* Prose Content Styles */
+	.prose-content {
+		font-size: var(--text-base);
+		line-height: 1.8;
+		color: var(--text-primary);
+	}
+
+	.prose-content :global(p) {
+		margin-bottom: var(--space-5);
+	}
+
+	.prose-content :global(strong) {
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.prose-content :global(em) {
+		font-style: italic;
+	}
+
+	.prose-content :global(.inline-code) {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: 0.9em;
+		background: var(--bg-elevated);
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		color: var(--accent);
+	}
+
+	.prose-content :global(.code-block) {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-md);
+		padding: var(--space-4);
+		margin: var(--space-5) 0;
+		overflow-x: auto;
+	}
+
+	.prose-content :global(.code-block code) {
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: var(--text-sm);
+		color: var(--text-primary);
+	}
+
+	.introduction {
+		font-size: var(--text-lg);
+		color: var(--text-secondary);
+		border-left: 4px solid var(--accent);
+		padding-left: var(--space-5);
+		margin-bottom: var(--space-10);
+	}
+
+	.introduction :global(p) {
+		margin-bottom: var(--space-4);
+	}
+
+	.content-section {
+		margin-bottom: var(--space-12);
+	}
+
+	.content-section h2 {
+		font-size: var(--text-2xl);
+		font-weight: 600;
+		margin-bottom: var(--space-5);
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.level-badge {
+		font-size: var(--text-xs);
+		font-weight: 500;
+		padding: var(--space-1) var(--space-3);
+		border-radius: var(--radius-sm);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.level-badge.beginner {
+		background: var(--success-muted);
+		color: var(--success);
+	}
+
+	.level-badge.intermediate {
+		background: var(--warning-muted);
+		color: var(--warning);
+	}
+
+	.level-badge.advanced {
+		background: rgba(239, 68, 68, 0.15);
+		color: #f87171;
+	}
+
+	.section-content {
+		color: var(--text-primary);
+	}
+
+	.summary-section,
+	.next-steps-section {
+		margin-bottom: var(--space-8);
+	}
+
+	.summary-section h2,
+	.next-steps-section h2 {
+		font-size: var(--text-xl);
+		margin-bottom: var(--space-4);
+	}
+
+	.summary-card {
+		background: var(--success-muted);
+		border: 1px solid rgba(52, 199, 89, 0.3);
+		border-radius: var(--radius-lg);
+		padding: var(--space-5);
+	}
+
+	.summary-card :global(p) {
+		margin-bottom: 0;
+		color: var(--text-primary);
+	}
+
+	.next-steps-card {
+		background: var(--accent-muted);
+		border: 1px solid rgba(99, 102, 241, 0.3);
+		border-radius: var(--radius-lg);
+		padding: var(--space-5);
+	}
+
+	.next-steps-card :global(p) {
+		margin-bottom: 0;
+		color: var(--text-primary);
+	}
+
+	.content-meta {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		padding-top: var(--space-6);
+		margin-top: var(--space-8);
+		border-top: 1px solid var(--border-subtle);
+	}
+
+	.content-meta .ai-badge {
+		font-size: var(--text-xs);
+		padding: var(--space-1) var(--space-3);
+		background: var(--accent-muted);
+		color: var(--accent);
+		border-radius: var(--radius-sm);
+		font-weight: 500;
+	}
+
+	.generated-date {
+		font-size: var(--text-xs);
+		color: var(--text-muted);
 	}
 </style>

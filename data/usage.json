@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "model": "claude-sonnet-4-20250514",
+      "inputTokens": 702,
+      "outputTokens": 2860,
+      "source": "prose",
+      "topicId": "game-loop",
+      "id": "usage-1768715655922-qcb54ht",
+      "timestamp": "2026-01-18T05:54:15.922Z",
+      "cost": 0.045
+    }
+  ],
+  "totalCost": 0.045,
+  "totalInputTokens": 702,
+  "totalOutputTokens": 2860,
+  "todayCost": 0,
+  "sessionStart": "2026-01-18T05:54:15.922Z"
+}
